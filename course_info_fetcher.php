@@ -190,7 +190,9 @@ function heb_semester_to_num($year, $season) {
 }
 
 function download_courses($courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads) {
-    mkdir("$cache_dir/$semester");
+    if (!is_dir("$cache_dir/$semester")) {
+        mkdir("$cache_dir/$semester");
+    }
     $requests = array_map(function ($course) use ($semester, $cache_dir) {
         $suffix = $semester != '' ? "/$semester" : '';
         return [
