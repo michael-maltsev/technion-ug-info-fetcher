@@ -11,11 +11,13 @@ require_once 'course_info_fetcher.php';
 
 $fetched = course_info_fetcher\fetch();
 if ($fetched === false) {
-    exit("Fetching failed\n");
+    echo "Fetching failed\n";
+    exit(1);
 }
 
 echo "Downloaded {$fetched['downloaded']} courses to cache\n";
-if ($fetched['failed'] > 0) {
+$has_failed = $fetched['failed'] > 0;
+if ($has_failed) {
     echo "WARNING: failed to download {$fetched['failed']} courses\n";
     echo "You might want to run the script again\n";
 }
@@ -25,3 +27,4 @@ echo "Writing result to '$filename'\n";
 file_put_contents($filename, json_encode($fetched['info'], JSON_UNESCAPED_UNICODE));
 
 echo "Done!\n";
+exit($has_failed ? 1 : 0);
