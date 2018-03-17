@@ -12,6 +12,7 @@ function fetch($options = []) {
     $repfile_cache_life = isset($options['repfile_cache_life']) ? $options['repfile_cache_life'] : 60*60*24*365*10;
     $course_cache_life = isset($options['course_cache_life']) ? $options['course_cache_life'] : 60*60*24*365*10;
     $simultaneous_downloads = isset($options['simultaneous_downloads']) ? $options['simultaneous_downloads'] : 64;
+    $download_timeout = isset($options['download_timeout']) ? $options['download_timeout'] : 60*10;
 
     if (!is_dir($cache_dir)) {
         mkdir($cache_dir);
@@ -30,7 +31,7 @@ function fetch($options = []) {
     list($semester, $courses) = $data;
 
     list($downloaded, $failed) = download_courses(
-        array_flatten($courses), $semester, $cache_dir, $course_cache_life, $simultaneous_downloads);
+        array_flatten($courses), $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
 
     //$debug_filename = "$cache_dir/_debug.txt";
     //file_put_contents($debug_filename, '');
@@ -189,7 +190,7 @@ function heb_semester_to_num($year, $season) {
     return $year_array[$year] . $season_array[$season];
 }
 
-function download_courses($courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads) {
+function download_courses($courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout) {
     if (!is_dir("$cache_dir/$semester")) {
         mkdir("$cache_dir/$semester");
     }
@@ -213,7 +214,7 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
 
     //echo count($requests)." requests, downloading...\n";
     foreach (array_chunk($requests, $simultaneous_downloads) as $chunk) {
-        multi_request($chunk);
+        multi_request($chunk, [CURLOPT_TIMEOUT => $download_timeout]);
     }
 
     $requests = array_filter($requests, function ($request) use ($should_request_course) {
