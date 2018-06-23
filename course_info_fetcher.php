@@ -300,7 +300,6 @@ function find_courses_in_rishum_by_name($ch, $semester, $course_name_substring) 
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $post_fields);
-    curl_setopt($ch, CURLOPT_PROXY, '127.0.0.1:8888');
 
     $html = curl_exec($ch);
     if ($html === false)
