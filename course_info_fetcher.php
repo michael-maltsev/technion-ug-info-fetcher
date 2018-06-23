@@ -31,7 +31,7 @@ function fetch($options = []) {
     list($semester, $courses) = $data;
 
     list($downloaded, $failed) = download_courses(
-        array_flatten($courses), $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
+        $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
 
     //$debug_filename = "$cache_dir/_debug.txt";
     //file_put_contents($debug_filename, '');
@@ -39,33 +39,32 @@ function fetch($options = []) {
     $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
 
     $fetched_info = [];
-    foreach ($courses as $faculty_name => $faculty_courses) {
-        foreach ($faculty_courses as $course) {
-            $html = file_get_contents("$cache_dir/$semester/$course.html");
-            $html = fix_course_html($html);
+    foreach ($courses as $course) {
+        $html = file_get_contents("$cache_dir/$semester/$course.html");
+        $html = fix_course_html($html);
 
-            $dom = new \DOMDocument;
-            $dom->loadHTML($html);
-            libxml_clear_errors();
-            $xpath = new \DOMXPath($dom);
+        $dom = new \DOMDocument;
+        $dom->loadHTML($html);
+        libxml_clear_errors();
+        $xpath = new \DOMXPath($dom);
 
-            $errors = get_course_errors($xpath);
-            if (count($errors) > 0) {
-                assert(count($errors) == 1);
-                assert(preg_match('#^מקצוע \d{6} לא קיים$#u', $errors[0]));
-                continue;
-            }
-
-            if (is_course_closed($xpath)) {
-                continue;
-            }
-
-            $info = get_course_info($dom, $xpath);
-            assert(!isset($info['general']['פקולטה']));
-            $info['general'] = ['פקולטה' => $faculty_name] + $info['general'];
-            //file_put_contents($debug_filename, print_r($info, true), FILE_APPEND);
-            $fetched_info[] = $info;
+        $errors = get_course_errors($xpath);
+        if (count($errors) > 0) {
+            assert(count($errors) == 1);
+            assert(preg_match('#^מקצוע \d{6} לא קיים$#u', $errors[0]));
+            continue;
         }
+
+        if (is_course_closed($xpath)) {
+            continue;
+        }
+
+        $info = get_course_info($dom, $xpath);
+        assert(!isset($info['general']['פקולטה']));
+        $faculty_name = faculty_name_from_course_number($course);
+        $info['general'] = ['פקולטה' => $faculty_name] + $info['general'];
+        //file_put_contents($debug_filename, print_r($info, true), FILE_APPEND);
+        $fetched_info[] = $info;
     }
 
     libxml_use_internal_errors($prev_libxml_use_internal_errors);
@@ -76,6 +75,37 @@ function fetch($options = []) {
         'downloaded' => $downloaded,
         'failed' => $failed
     ];
+}
+
+function faculty_name_from_course_number($course) {
+    $faculties = [
+        '01' => 'הנדסה אזרחית וסביבתית',
+        '03' => 'הנדסת מכונות',
+        '04' => 'הנדסת חשמל',
+        '05' => 'הנדסה כימית',
+        '06' => 'הנדסת ביוטכנולוגיה ומזון',
+        '08' => 'הנדסת אוירונוטיקה וחלל',
+        '09' => 'הנדסת תעשייה וניהול',
+        '10' => 'מתמטיקה',
+        '11' => 'פיזיקה',
+        '12' => 'כימיה',
+        '13' => 'ביולוגיה',
+        '19' => 'מתמטיקה שימושית',
+        '20' => 'ארכיטקטורה ובינוי ערים',
+        '21' => 'חינוך למדע וטכנולוגיה',
+        '23' => 'מדעי המחשב',
+        '27' => 'רפואה',
+        '31' => 'מדע והנדסה של חומרים',
+        '32' => 'לימודים הומניסטיים ואמנויות',
+        '33' => 'הנדסה ביו-רפואית',
+        '39' => 'ספורט',
+    ];
+    $two_digits = substr($course, 0, 2);
+    if (isset($faculties[$two_digits])) {
+        return $faculties[$two_digits];
+    } else {
+        return '';
+    }
 }
 
 function download_repfile($repfile_filename, $repfile_cache_life) {
@@ -126,7 +156,7 @@ function get_courses_from_repfile($repfile_filename) {
             #ux
 EOF;
         if (preg_match($p, $faculty, $matches)) {
-            $faculty_name = utf8_strrev($matches[1]);
+            //$faculty_name = utf8_strrev($matches[1]);
             $faculty_semester = heb_semester_to_num($matches[2], $matches[3]);
         } else {
             $p = <<<'EOF'
@@ -137,11 +167,11 @@ EOF;
                 #ux
 EOF;
             if (preg_match($p, $faculty, $matches)) {
-                $faculty_name = utf8_strrev($matches[3]);
+                //$faculty_name = utf8_strrev($matches[3]);
                 $faculty_semester = heb_semester_to_num($matches[1], $matches[2]);
             } else {
                 assert(0);
-                $faculty_name = strrev("unknown$id");
+                //$faculty_name = strrev("unknown$id");
                 $faculty_semester = false;
             }
         }
@@ -163,8 +193,10 @@ EOF;
 EOF;
         preg_match_all($p, $faculty, $matches);
 
-        $courses[$faculty_name] = $matches[1];
+        $courses = array_merge($courses, $matches[1]);
     }
+
+    sort($courses);
 
     return [$semester, $courses];
 }
@@ -408,13 +440,6 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath) {
     }
 
     return $info;
-}
-
-// https://stackoverflow.com/questions/1319903/how-to-flatten-a-multidimensional-array
-function array_flatten(array $array) {
-    $return = array();
-    array_walk_recursive($array, function($a) use (&$return) { $return[] = $a; });
-    return $return;
 }
 
 // https://stackoverflow.com/a/17496494
