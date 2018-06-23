@@ -9,7 +9,12 @@ set_error_handler(
 
 require_once 'course_info_fetcher.php';
 
-$fetched = course_info_fetcher\fetch();
+$options = [];
+if ($argc > 1) {
+    parse_str($argv[1], $options);
+}
+
+$fetched = course_info_fetcher\fetch($options);
 if ($fetched === false) {
     echo "Fetching failed\n";
     exit(1);
