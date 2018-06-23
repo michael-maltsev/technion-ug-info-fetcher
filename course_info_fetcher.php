@@ -9,6 +9,7 @@ namespace course_info_fetcher;
 
 function fetch($options = []) {
     $cache_dir = isset($options['cache_dir']) ? $options['cache_dir'] : 'course_info_cache';
+    $courses_list_from_rishum = isset($options['courses_list_from_rishum']) ? $options['courses_list_from_rishum'] : false;
     $repfile_cache_life = isset($options['repfile_cache_life']) ? $options['repfile_cache_life'] : 60*60*24*365*10;
     $course_cache_life = isset($options['course_cache_life']) ? $options['course_cache_life'] : 60*60*24*365*10;
     $simultaneous_downloads = isset($options['simultaneous_downloads']) ? $options['simultaneous_downloads'] : 64;
@@ -18,17 +19,26 @@ function fetch($options = []) {
         mkdir($cache_dir);
     }
 
-    $repfile_filename = "$cache_dir/REPFILE.zip";
-    if (!download_repfile($repfile_filename, $repfile_cache_life)) {
-        return false;
-    }
+    if ($courses_list_from_rishum === false) {
+        $repfile_filename = "$cache_dir/REPFILE.zip";
+        if (!download_repfile($repfile_filename, $repfile_cache_life)) {
+            return false;
+        }
 
-    $data = get_courses_from_repfile($repfile_filename);
-    if ($data === false) {
-        return false;
-    }
+        $data = get_courses_from_repfile($repfile_filename);
+        if ($data === false) {
+            return false;
+        }
 
-    list($semester, $courses) = $data;
+        list($semester, $courses) = $data;
+    } else {
+        $semester = $courses_list_from_rishum;
+
+        $courses = get_courses_from_rishum($semester);
+        if ($courses === false) {
+            return false;
+        }
+    }
 
     list($downloaded, $failed) = download_courses(
         $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
@@ -220,6 +230,114 @@ function heb_semester_to_num($year, $season) {
     ];
 
     return $year_array[$year] . $season_array[$season];
+}
+
+function get_courses_from_rishum($semester) {
+    $ch = curl_init('http://ug3.technion.ac.il/rishum/search');
+
+    $result = find_courses_in_rishum_by_name($ch, $semester, '');
+    list($success, $data) = $result;
+    if ($success) {
+        sort($data);
+        return $data;
+    }
+
+    if ($data != 'html') {
+        return false;
+    }
+
+    // Hebrew letters, least common letters first.
+    $heb_letters = ['ץ', 'ך', 'ף', 'ז', 'צ', 'ן', 'ג', 'ם', 'ע', 'ס', 'ח', 'ט', 'ש', 'פ', 'כ', 'ד', 'ק', 'א', 'ל', 'נ', 'ב', 'ה', 'ר', 'ת', 'מ', 'ו', 'י'];
+
+    $courses = [];
+
+    for ($i = 0; $i < count($heb_letters); $i++) {
+        $letter = $heb_letters[$i];
+        $courses_to_append = get_courses_from_rishum_helper($ch, $semester, $letter, array_slice($heb_letters, $i));
+        if ($courses_to_append === false) {
+            return false;
+        }
+
+        $courses = array_unique(array_merge($courses, $courses_to_append));
+    }
+
+    sort($courses);
+    return $courses;
+}
+
+function get_courses_from_rishum_helper($ch, $semester, $course_name_substring, $dictionary_letters) {
+    $result = find_courses_in_rishum_by_name($ch, $semester, $course_name_substring);
+    list($success, $data) = $result;
+    if ($success) {
+        return $data;
+    }
+
+    if ($data != 'html') {
+        return false;
+    }
+
+    $courses = [];
+
+    foreach ($dictionary_letters as $letter) {
+        $new_substring = $course_name_substring . $letter;
+        $courses_to_append = get_courses_from_rishum_helper($ch, $semester, $new_substring, $dictionary_letters);
+        if ($courses_to_append === false) {
+            return false;
+        }
+
+        $courses = array_unique(array_merge($courses, $courses_to_append));
+    }
+
+    return $courses;
+}
+
+function find_courses_in_rishum_by_name($ch, $semester, $course_name_substring) {
+    $post_fields = "CNM=$course_name_substring&CNO=&PNT=&FAC=&LLN=&LFN=&SEM=$semester"
+        ."&RECALL=Y&D1=on&D2=on&D3=on&D4=on&D5=on&D6=on&FTM=&TTM=&SIL="
+        ."&OPTCAT=on&OPTSEM=on&OPTSTUD=on&doSearch=Y&Search=+++%D7%97%D7%A4%D7%A9+++";
+
+    curl_setopt($ch, CURLOPT_HEADER, false);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $post_fields);
+    curl_setopt($ch, CURLOPT_PROXY, '127.0.0.1:8888');
+
+    $html = curl_exec($ch);
+    if ($html === false)
+        return [false, 'curl'];
+
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    if ($code != 200)
+        return [false, 'http'];
+
+    $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
+
+    $dom = new \DOMDocument;
+    $dom->loadHTML($html);
+    libxml_clear_errors();
+    $xpath = new \DOMXPath($dom);
+
+    libxml_use_internal_errors($prev_libxml_use_internal_errors);
+
+    $errors = get_course_errors($xpath);
+    if (count($errors) > 0) {
+        assert(count($errors) == 1);
+        if ($errors[0] == 'לא נמצאו מקצועות מתאימים') {
+            return [true, []];
+        }
+
+        assert($errors[0] == 'כמות המידע העונה לתנאי החיפוש עברה את המקסימום המותריש לצמצם את טווח החיפוש');
+        return [false, 'html'];
+    }
+
+    $courses = $xpath->query(
+        "//section[@class='search-results']/div[@class='result-row']/div[@class='course-number']/a");
+    $courses = iterator_to_array($courses);
+    $courses = array_map(function ($node) {
+        return trim($node->nodeValue);
+    }, $courses);
+
+    return [true, $courses];
 }
 
 function download_courses($courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout) {
@@ -494,10 +612,10 @@ function multi_request($data, $options = array()) {
     $running = null;
     do {
         curl_multi_exec($mh, $running);
-    } while($running > 0);
+    } while ($running > 0);
 
     // get content and remove handles
-    foreach($curly as $id => $c) {
+    foreach ($curly as $id => $c) {
         if (is_array($data[$id]) && !empty($data[$id]['filename'])) {
             $result[$id] = curl_multi_getcontent($c);
         }
