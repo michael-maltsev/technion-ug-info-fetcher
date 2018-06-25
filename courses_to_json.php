@@ -20,6 +20,11 @@ if ($fetched === false) {
     exit(1);
 }
 
+if ($fetched['downloaded'] == 0) {
+    echo "No courses were downloaded\n";
+    exit(1);
+}
+
 echo "Downloaded {$fetched['downloaded']} courses to cache\n";
 $has_failed = $fetched['failed'] > 0;
 if ($has_failed) {
