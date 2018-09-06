@@ -426,8 +426,8 @@ function get_course_general_info(\DOMDocument $dom, \DOMXPath $xpath) {
     $property_values = array_map(function ($node) use ($dom) {
         $xml = $dom->saveXML($node);
         $stripped = strip_tags($xml, '<br><hr>');
+        $stripped = preg_replace('#(<br.*?>\s*)?<hr.*?>#u', "\n====================\n", $stripped);
         $stripped = preg_replace('#<br.*?>#u', "\n", $stripped);
-        $stripped = preg_replace('#<hr.*?>#u', "====================\n", $stripped);
         $stripped = preg_replace('#^[^\S\n]+|[^\S\n]+$#um', '', $stripped);
         return trim($stripped);
     }, $property_values);
