@@ -566,8 +566,8 @@ function utf8_strrev($str){
 }
 
 // https://www.phpied.com/simultaneuos-http-requests-in-php-with-curl/
+// http://php.net/manual/en/function.curl-multi-select.php#115381
 function multi_request($data, $options = array()) {
-
     // array of curl handles
     $curly = array();
     // data to be returned
@@ -579,23 +579,22 @@ function multi_request($data, $options = array()) {
     // loop through $data and create curl handles
     // then add them to the multi-handle
     foreach ($data as $id => $d) {
-
         $curly[$id] = curl_init();
 
         $url = (is_array($d) && !empty($d['url'])) ? $d['url'] : $d;
-        curl_setopt($curly[$id], CURLOPT_URL,            $url);
-        curl_setopt($curly[$id], CURLOPT_HEADER,         false);
+        curl_setopt($curly[$id], CURLOPT_URL, $url);
+        curl_setopt($curly[$id], CURLOPT_HEADER, false);
         curl_setopt($curly[$id], CURLOPT_RETURNTRANSFER, true);
 
         // post? filename?
         if (is_array($d)) {
             if (!empty($d['post'])) {
-                curl_setopt($curly[$id], CURLOPT_POST,       true);
+                curl_setopt($curly[$id], CURLOPT_POST, true);
                 curl_setopt($curly[$id], CURLOPT_POSTFIELDS, $d['post']);
             }
             if (!empty($d['filename'])) {
                 curl_setopt($curly[$id], CURLOPT_RETURNTRANSFER, false);
-                curl_setopt($curly[$id], CURLOPT_FILE,       fopen($d['filename'], 'w'));
+                curl_setopt($curly[$id], CURLOPT_FILE, fopen($d['filename'], 'w'));
             }
         }
 
@@ -607,15 +606,28 @@ function multi_request($data, $options = array()) {
         curl_multi_add_handle($mh, $curly[$id]);
     }
 
-    // execute the handles
-    $running = null;
+    // while we're still active, execute curl
+    $active = null;
     do {
-        curl_multi_exec($mh, $running);
-    } while ($running > 0);
+        $mrc = curl_multi_exec($mh, $active);
+    } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+    while ($active && $mrc == CURLM_OK) {
+        // wait for activity on any curl-connection
+        if (curl_multi_select($mh) == -1) {
+            usleep(1);
+        }
+
+        // continue to exec until curl is ready to
+        // give us more data
+        do {
+            $mrc = curl_multi_exec($mh, $active);
+        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+    }
 
     // get content and remove handles
     foreach ($curly as $id => $c) {
-        if (is_array($data[$id]) && !empty($data[$id]['filename'])) {
+        if (!is_array($data[$id]) || empty($data[$id]['filename'])) {
             $result[$id] = curl_multi_getcontent($c);
         }
         curl_multi_remove_handle($mh, $c);
