@@ -367,11 +367,12 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
         ];
     }, $courses);
 
-    $should_request_course = function ($request) use ($course_cache_life) {
+    $min_valid_cache_time = time() - $course_cache_life;
+    $should_request_course = function ($request) use ($min_valid_cache_time) {
         return
             !is_file($request['filename']) ||
             filesize($request['filename']) == 0 ||
-            time() - filemtime($request['filename']) > $course_cache_life;
+            filemtime($request['filename']) < $min_valid_cache_time;
     };
 
     $requests = array_filter($requests, $should_request_course);
@@ -383,16 +384,22 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
     }
 
     $requests = array_filter($requests, function ($request) use ($should_request_course) {
-        if (!$should_request_course($request)) {
-            return false;
+        if ($should_request_course($request)) {
+            return true;
         }
-        return strpos(file_get_contents($request['filename']), 'Warning: mysqli') !== false;
+
+        if (strpos(file_get_contents($request['filename']), 'Warning: mysqli') !== false) {
+            file_put_contents($request['filename'], '');
+            return true;
+        }
+
+        return false;
     });
 
     $failed_count = count($requests);
 
     //echo "Done, ".count($requests)." failed\n";
-    return [$requested_count, $failed_count];
+    return [$requested_count - $failed_count, $failed_count];
 }
 
 function fix_course_html($html) {
