@@ -14,6 +14,7 @@ function fetch($options = []) {
     $course_cache_life = isset($options['course_cache_life']) ? $options['course_cache_life'] : 60*60*24*365*10;
     $simultaneous_downloads = isset($options['simultaneous_downloads']) ? $options['simultaneous_downloads'] : 64;
     $download_timeout = isset($options['download_timeout']) ? $options['download_timeout'] : 60*10;
+    $try_until_all_downloaded = isset($options['try_until_all_downloaded']) ? $options['try_until_all_downloaded'] : false;
 
     if (!is_dir($cache_dir)) {
         mkdir($cache_dir);
@@ -43,6 +44,17 @@ function fetch($options = []) {
     list($downloaded, $failed) = download_courses(
         $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
 
+    if ($try_until_all_downloaded) {
+        while ($failed > 0) {
+            //echo "$failed failed\n";
+            sleep(10);
+            list($downloaded_new, $failed) = download_courses(
+                $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
+
+            $downloaded += $downloaded_new;
+        }
+    }
+
     //$debug_filename = "$cache_dir/_debug.txt";
     //file_put_contents($debug_filename, '');
 
@@ -51,6 +63,10 @@ function fetch($options = []) {
     $fetched_info = [];
     foreach ($courses as $course) {
         $html = file_get_contents("$cache_dir/$semester/$course.html");
+        if ($html == '') {
+            continue;
+        }
+
         $html = fix_course_html($html);
 
         $dom = new \DOMDocument;
@@ -363,7 +379,7 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
 
     //echo count($requests)." requests, downloading...\n";
     foreach (array_chunk($requests, $simultaneous_downloads) as $chunk) {
-        multi_request($chunk, [CURLOPT_TIMEOUT => $download_timeout]);
+        multi_request($chunk, [CURLOPT_FAILONERROR => true, CURLOPT_TIMEOUT => $download_timeout]);
     }
 
     $requests = array_filter($requests, function ($request) use ($should_request_course) {
