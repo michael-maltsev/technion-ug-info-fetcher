@@ -258,7 +258,7 @@ function get_courses_from_rishum($semester) {
         return $data;
     }
 
-    if ($data != 'html') {
+    if ($data != 'too_many') {
         return false;
     }
 
@@ -288,7 +288,7 @@ function get_courses_from_rishum_helper($ch, $semester, $course_name_substring, 
         return $data;
     }
 
-    if ($data != 'html') {
+    if ($data != 'too_many') {
         return false;
     }
 
@@ -325,6 +325,9 @@ function find_courses_in_rishum_by_name($ch, $semester, $course_name_substring) 
     if ($code != 200)
         return [false, 'http'];
 
+    if (!is_valid_rishum_html($html))
+        return [false, 'html'];
+
     $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
 
     $dom = new \DOMDocument;
@@ -342,7 +345,7 @@ function find_courses_in_rishum_by_name($ch, $semester, $course_name_substring) 
         }
 
         assert($errors[0] == 'כמות המידע העונה לתנאי החיפוש עברה את המקסימום המותריש לצמצם את טווח החיפוש');
-        return [false, 'html'];
+        return [false, 'too_many'];
     }
 
     $courses = $xpath->query(
@@ -388,7 +391,8 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
             return true;
         }
 
-        if (strpos(file_get_contents($request['filename']), 'Warning: mysqli') !== false) {
+        $html = file_get_contents($request['filename']);
+        if (!is_valid_rishum_html($html)) {
             file_put_contents($request['filename'], '');
             return true;
         }
@@ -400,6 +404,19 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
 
     //echo "Done, ".count($requests)." failed\n";
     return [$requested_count - $failed_count, $failed_count];
+}
+
+function is_valid_rishum_html($html) {
+    // Verifies that the html response is not truncated. Helps detect partial server responses.
+    if (substr(rtrim($html), -strlen('</html>')) !== '</html>') {
+        return false;
+    }
+
+    if (strpos($html, 'Warning: mysqli') !== false) {
+        return false;
+    }
+
+    return true;
 }
 
 function fix_course_html($html) {
