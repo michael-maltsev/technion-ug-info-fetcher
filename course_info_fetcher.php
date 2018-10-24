@@ -408,8 +408,13 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
 
 function is_valid_rishum_html($html) {
     // Verifies that the html response is not truncated. Helps detect partial server responses.
-    if (substr(rtrim($html), -strlen('</html>')) !== '</html>') {
-        return false;
+    $html_rtrimmed = rtrim($html);
+    if (substr($html_rtrimmed, -strlen('</html>')) !== '</html>') {
+        // If a search result has only one result, the page ends with a JS redirect.
+        $p = "#<script>location.href='[^']*?'</script>$#";
+        if (!preg_match($p, $html_rtrimmed)) {
+            return false;
+        }
     }
 
     if (strpos($html, 'Warning: mysqli') !== false) {
