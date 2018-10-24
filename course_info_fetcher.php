@@ -411,7 +411,7 @@ function is_valid_rishum_html($html) {
     $html_rtrimmed = rtrim($html);
     if (substr($html_rtrimmed, -strlen('</html>')) !== '</html>') {
         // If a search result has only one result, the page ends with a JS redirect.
-        $p = "#<script>location.href='[^']*?'</script>$#";
+        $p = "#<script>location\.href='[^']*?'</script>$#";
         if (!preg_match($p, $html_rtrimmed)) {
             return false;
         }
