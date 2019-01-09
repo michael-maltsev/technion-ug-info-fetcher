@@ -480,7 +480,7 @@ function get_course_general_info(\DOMDocument $dom, \DOMXPath $xpath) {
     $info = array_combine($properties, $property_values);
 
     // Remove unhelpful data fields.
-    unset($info['אתר הקורס'], $info['עבור לסמסטר']);
+    unset($info['אתר הקורס'], $info['עבור לסמסטר'], $info['מיקום']);
 
     return $info;
 }
