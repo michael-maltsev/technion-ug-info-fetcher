@@ -263,9 +263,7 @@ function get_courses_from_rishum($semester) {
     }
 
     // Hebrew letters, least common letters first.
-    //$heb_letters = ['ץ', 'ך', 'ף', 'ז', 'צ', 'ן', 'ג', 'ם', 'ע', 'ס', 'ח', 'ט', 'ש', 'פ', 'כ', 'ד', 'ק', 'א', 'ל', 'נ', 'ב', 'ה', 'ר', 'ת', 'מ', 'ו', 'י'];
-    // A temporary fix for incorrect Hebrew handling:
-    $heb_letters = ['.', 'l', ';', 'z', 'm', 'i', 'd', 'o', 'g', 'x', 'j', 'y', 'a', 'p', 'f', 's', 'e', 't', 'k', 'b', 'c', 'v', 'r', ',', 'n', 'u', 'h'];
+    $heb_letters = ['ץ', 'ך', 'ף', 'ז', 'צ', 'ן', 'ג', 'ם', 'ע', 'ס', 'ח', 'ט', 'ש', 'פ', 'כ', 'ד', 'ק', 'א', 'ל', 'נ', 'ב', 'ה', 'ר', 'ת', 'מ', 'ו', 'י'];
 
     $courses = [];
 
@@ -449,12 +447,6 @@ function get_course_errors(\DOMXPath $xpath) {
     $errors = array_map(function ($node) {
         return trim($node->nodeValue);
     }, $errors);
-
-    // A temporary fix for incorrect Hebrew handling:
-    // Remove errors starting with "Did you mean: ".
-    $errors = array_values(array_filter($errors, function ($error) {
-        return substr($error, 0, strlen("האם התכוונת ל: ")) != "האם התכוונת ל: ";
-    }));
 
     return $errors;
 }
