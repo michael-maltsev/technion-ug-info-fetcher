@@ -8,6 +8,8 @@ namespace course_info_fetcher;
  * */
 
 function fetch($options = []) {
+    global $course_info_fetcher_verbose;
+
     $cache_dir = isset($options['cache_dir']) ? $options['cache_dir'] : 'course_info_cache';
     $courses_list_from_rishum = isset($options['courses_list_from_rishum']) ? $options['courses_list_from_rishum'] : null;
     $repfile_cache_life = isset($options['repfile_cache_life']) ? intval($options['repfile_cache_life']) : 60*60*24*365*10;
@@ -15,10 +17,13 @@ function fetch($options = []) {
     $simultaneous_downloads = isset($options['simultaneous_downloads']) ? intval($options['simultaneous_downloads']) : 64;
     $download_timeout = isset($options['download_timeout']) ? intval($options['download_timeout']) : 60*10;
     $try_until_all_downloaded = isset($options['try_until_all_downloaded']) ? filter_var($options['try_until_all_downloaded'], FILTER_VALIDATE_BOOLEAN) : false;
+    $course_info_fetcher_verbose = isset($options['verbose']) ? filter_var($options['verbose'], FILTER_VALIDATE_BOOLEAN) : false;
 
     if (!is_dir($cache_dir)) {
         mkdir($cache_dir);
     }
+
+    log_verbose("Downloading list of courses...\n");
 
     if (!isset($courses_list_from_rishum)) {
         $repfile_filename = "$cache_dir/REPFILE.zip";
@@ -41,12 +46,14 @@ function fetch($options = []) {
         }
     }
 
+    log_verbose("Downloading course data...\n");
+
     list($downloaded, $failed) = download_courses(
         $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
 
     if ($try_until_all_downloaded) {
         while ($failed > 0) {
-            //echo "$failed failed\n";
+            log_verbose("Re-trying download for $failed failed courses...\n");
             sleep(10);
             list($downloaded_new, $failed) = download_courses(
                 $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
@@ -54,6 +61,8 @@ function fetch($options = []) {
             $downloaded += $downloaded_new;
         }
     }
+
+    log_verbose("Parsing downloaded data...\n");
 
     //$debug_filename = "$cache_dir/_debug.txt";
     //file_put_contents($debug_filename, '');
@@ -137,7 +146,7 @@ function faculty_name_from_course_number($course) {
 function download_repfile($repfile_filename, $repfile_cache_life) {
     if (!is_valid_zip_file($repfile_filename) ||
         time() - filemtime($repfile_filename) > $repfile_cache_life) {
-        //echo "Downloading Repfile...\n";
+        log_verbose("\tDownloading Repfile...\n");
         $result = file_put_contents($repfile_filename,
             fopen('http://ug3.technion.ac.il/rep/REPFILE.zip', 'r'));
         if ($result === false) {
@@ -267,6 +276,8 @@ function get_courses_from_rishum($semester) {
 
     $courses = [];
 
+    log_verbose("\tGetting list of courses from Rishum:");
+
     for ($i = 0; $i < count($heb_letters); $i++) {
         $letter = $heb_letters[$i];
         $courses_to_append = get_courses_from_rishum_helper($ch, $semester, $letter, array_slice($heb_letters, $i));
@@ -277,11 +288,15 @@ function get_courses_from_rishum($semester) {
         $courses = array_unique(array_merge($courses, $courses_to_append));
     }
 
+    log_verbose("\n\t...got list of " . count($courses) . " courses\n");
+
     sort($courses);
     return $courses;
 }
 
 function get_courses_from_rishum_helper($ch, $semester, $course_name_substring, $dictionary_letters) {
+    log_verbose(" $course_name_substring");
+
     $result = find_courses_in_rishum_by_name($ch, $semester, $course_name_substring);
     list($success, $data) = $result;
     if ($success) {
@@ -381,9 +396,11 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
     $requests = array_filter($requests, $should_request_course);
     $requested_count = count($requests);
 
-    //echo count($requests)." requests, downloading...\n";
-    foreach (array_chunk($requests, $simultaneous_downloads) as $chunk) {
+    log_verbose("\tDownloading data of $requested_count courses:");
+
+    foreach (array_chunk($requests, $simultaneous_downloads) as $i => $chunk) {
         multi_request($chunk, [CURLOPT_FAILONERROR => true, CURLOPT_TIMEOUT => $download_timeout]);
+        log_verbose(" " . (($i + 1) * $simultaneous_downloads));
     }
 
     $requests = array_filter($requests, function ($request) use ($should_request_course) {
@@ -402,7 +419,7 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
 
     $failed_count = count($requests);
 
-    //echo "Done, ".count($requests)." failed\n";
+    log_verbose("\n\t...done, $failed_count of $requested_count failed\n");
     return [$requested_count - $failed_count, $failed_count];
 }
 
@@ -606,6 +623,14 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath) {
     }
 
     return $info;
+}
+
+function log_verbose($msg) {
+    global $course_info_fetcher_verbose;
+
+    if ($course_info_fetcher_verbose) {
+        echo $msg;
+    }
 }
 
 // https://stackoverflow.com/a/17496494
