@@ -10,14 +10,14 @@ namespace course_info_fetcher;
 function fetch($options = []) {
     global $course_info_fetcher_verbose;
 
-    $cache_dir = isset($options['cache_dir']) ? $options['cache_dir'] : 'course_info_cache';
-    $courses_list_from_rishum = isset($options['courses_list_from_rishum']) ? $options['courses_list_from_rishum'] : null;
-    $repfile_cache_life = isset($options['repfile_cache_life']) ? intval($options['repfile_cache_life']) : 60*60*24*365*10;
-    $course_cache_life = isset($options['course_cache_life']) ? intval($options['course_cache_life']) : 60*60*24*365*10;
-    $simultaneous_downloads = isset($options['simultaneous_downloads']) ? intval($options['simultaneous_downloads']) : 64;
-    $download_timeout = isset($options['download_timeout']) ? intval($options['download_timeout']) : 60*10;
-    $try_until_all_downloaded = isset($options['try_until_all_downloaded']) ? filter_var($options['try_until_all_downloaded'], FILTER_VALIDATE_BOOLEAN) : false;
-    $course_info_fetcher_verbose = isset($options['verbose']) ? filter_var($options['verbose'], FILTER_VALIDATE_BOOLEAN) : false;
+    $cache_dir = $options['cache_dir'] ?? 'course_info_cache';
+    $courses_list_from_rishum = $options['courses_list_from_rishum'] ?? null;
+    $repfile_cache_life = intval($options['repfile_cache_life'] ?? 60*60*24*365*10);
+    $course_cache_life = intval($options['course_cache_life'] ?? 60*60*24*365*10);
+    $simultaneous_downloads = intval($options['simultaneous_downloads'] ?? 64);
+    $download_timeout = intval($options['download_timeout'] ?? 60*10);
+    $try_until_all_downloaded = filter_var($options['try_until_all_downloaded'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
+    $course_info_fetcher_verbose = filter_var($options['verbose'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
 
     if (!is_dir($cache_dir)) {
         mkdir($cache_dir);
@@ -136,11 +136,7 @@ function faculty_name_from_course_number($course) {
         '39' => 'ספורט',
     ];
     $two_digits = substr($course, 0, 2);
-    if (isset($faculties[$two_digits])) {
-        return $faculties[$two_digits];
-    } else {
-        return '';
-    }
+    return $faculties[$two_digits] ?? '';
 }
 
 function download_repfile($repfile_filename, $repfile_cache_life) {
@@ -552,7 +548,7 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath) {
                     if ($v !== '') {
                         $ex = explode("\n", $v, 2);
                         if ($ex[0] === '') {
-                            $row[$k] = isset($ex[1]) ? $ex[1] : '';
+                            $row[$k] = $ex[1] ?? '';
                         }
                     }
                 }
@@ -577,7 +573,7 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath) {
                 if (strpos($v, $staff_sentinel) === false) {
                     $ex = explode("\n", $v, 2);
                     $group_row[$properties[$k]] = $ex[0];
-                    $row[$k] = isset($ex[1]) ? $ex[1] : '';
+                    $row[$k] = $ex[1] ?? '';
                     continue;
                 }
 
