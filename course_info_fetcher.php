@@ -276,7 +276,7 @@ function get_courses_from_rishum($semester) {
 
     for ($i = 0; $i < count($heb_letters); $i++) {
         $letter = $heb_letters[$i];
-        $courses_to_append = get_courses_from_rishum_helper($ch, $semester, $letter, array_slice($heb_letters, $i));
+        $courses_to_append = get_courses_from_rishum_helper($ch, $semester, $letter, $heb_letters);
         if ($courses_to_append === false) {
             return false;
         }
