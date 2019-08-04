@@ -256,7 +256,7 @@ function heb_semester_to_num($year, $season) {
 function get_courses_from_rishum($semester) {
     $ch = curl_init('http://ug3.technion.ac.il/rishum/search');
 
-    $result = find_courses_in_rishum_by_name($ch, $semester, '');
+    $result = find_courses_in_rishum_by_faculty($ch, $semester, '');
     list($success, $data) = $result;
     if ($success) {
         sort($data);
@@ -267,21 +267,24 @@ function get_courses_from_rishum($semester) {
         return false;
     }
 
-    // Hebrew letters, least common letters first.
-    $heb_letters = ['ץ', 'ך', 'ף', 'ז', 'צ', 'ן', 'ג', 'ם', 'ע', 'ס', 'ח', 'ט', 'ש', 'פ', 'כ', 'ד', 'ק', 'א', 'ל', 'נ', 'ב', 'ה', 'ר', 'ת', 'מ', 'ו', 'י'];
+    // List of faculty numbers, based on Rishum's web interface.
+    $faculty_numbers = [20, 13, 300, 1, 33, 7, 5, 8, 6, 4, 3, 9, 21, 350, 12, 32, 31, 23, 99, 10, 11, 27, 450];
 
     $courses = [];
 
     log_verbose("\tGetting list of courses from Rishum:");
 
-    for ($i = 0; $i < count($heb_letters); $i++) {
-        $letter = $heb_letters[$i];
-        $courses_to_append = get_courses_from_rishum_helper($ch, $semester, $letter, $heb_letters);
-        if ($courses_to_append === false) {
+    for ($i = 0; $i < count($faculty_numbers); $i++) {
+        $faculty_number = $faculty_numbers[$i];
+        log_verbose(" $faculty_number");
+
+        $result = find_courses_in_rishum_by_faculty($ch, $semester, $faculty_number);
+        list($success, $data) = $result;
+        if (!$success) {
             return false;
         }
 
-        $courses = array_unique(array_merge($courses, $courses_to_append));
+        $courses = array_unique(array_merge($courses, $data));
     }
 
     log_verbose("\n\t...got list of " . count($courses) . " courses\n");
@@ -290,36 +293,8 @@ function get_courses_from_rishum($semester) {
     return $courses;
 }
 
-function get_courses_from_rishum_helper($ch, $semester, $course_name_substring, $dictionary_letters) {
-    log_verbose(" $course_name_substring");
-
-    $result = find_courses_in_rishum_by_name($ch, $semester, $course_name_substring);
-    list($success, $data) = $result;
-    if ($success) {
-        return $data;
-    }
-
-    if ($data != 'too_many') {
-        return false;
-    }
-
-    $courses = [];
-
-    foreach ($dictionary_letters as $letter) {
-        $new_substring = $course_name_substring . $letter;
-        $courses_to_append = get_courses_from_rishum_helper($ch, $semester, $new_substring, $dictionary_letters);
-        if ($courses_to_append === false) {
-            return false;
-        }
-
-        $courses = array_unique(array_merge($courses, $courses_to_append));
-    }
-
-    return $courses;
-}
-
-function find_courses_in_rishum_by_name($ch, $semester, $course_name_substring) {
-    $post_fields = "CNM=$course_name_substring&CNO=&PNT=&FAC=&LLN=&LFN=&SEM=$semester"
+function find_courses_in_rishum_by_faculty($ch, $semester, $faculty_number) {
+    $post_fields = "CNM=&CNO=&PNT=&FAC=$faculty_number&LLN=&LFN=&SEM=$semester"
         ."&RECALL=Y&D1=on&D2=on&D3=on&D4=on&D5=on&D6=on&FTM=&TTM=&SIL="
         ."&OPTCAT=on&OPTSEM=on&OPTSTUD=on&doSearch=Y&Search=+++%D7%97%D7%A4%D7%A9+++";
 
