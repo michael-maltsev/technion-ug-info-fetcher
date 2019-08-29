@@ -254,7 +254,7 @@ function heb_semester_to_num($year, $season) {
 }
 
 function get_courses_from_rishum($semester) {
-    $ch = curl_init('http://ug3.technion.ac.il/rishum/search');
+    $ch = curl_init('https://ug3.technion.ac.il/rishum/search');
 
     $result = find_courses_in_rishum_by_faculty($ch, $semester, '');
     list($success, $data) = $result;
@@ -351,7 +351,7 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
     $requests = array_map(function ($course) use ($semester, $cache_dir) {
         $suffix = $semester != '' ? "/$semester" : '';
         return [
-            'url' => "http://ug3.technion.ac.il/rishum/course/$course$suffix",
+            'url' => "https://ug3.technion.ac.il/rishum/course/$course$suffix",
             'filename' => "$cache_dir/$semester/$course.html"
         ];
     }, $courses);
