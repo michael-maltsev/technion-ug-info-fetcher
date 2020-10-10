@@ -238,11 +238,16 @@ function heb_semester_to_num($year, $season) {
         'ז"עשת' => '2016',
         'ח"עשת' => '2017',
         'ט"עשת' => '2018',
-        'פ"שת' => '2019',
+        'ף"שת' => '2019',
         'א"פשת' => '2020',
         'ב"פשת' => '2021',
         'ג"פשת' => '2022',
         'ד"פשת' => '2023',
+        'ה"פשת' => '2024',
+        'ו"פשת' => '2025',
+        'ז"פשת' => '2026',
+        'ח"פשת' => '2027',
+        'ט"פשת' => '2028',
     ];
     $season_array = [
         'ףרוח' => '01',
@@ -371,7 +376,7 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
 
     foreach (array_chunk($requests, $simultaneous_downloads) as $i => $chunk) {
         multi_request($chunk, [CURLOPT_FAILONERROR => true, CURLOPT_TIMEOUT => $download_timeout]);
-        log_verbose(" " . (($i + 1) * $simultaneous_downloads));
+        log_verbose(' ' . ($i * $simultaneous_downloads + count($chunk)));
     }
 
     $requests = array_filter($requests, function ($request) use ($should_request_course) {
