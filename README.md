@@ -1,9 +1,29 @@
 # technion-ug-info-fetcher
+
 A script to fetch and parse Technion UG courses information, to have it in an accessible format.
 
 Inspired by [ug-data](https://github.com/elazarg/ug-data), but also fetches the course schedule information.
 
-Example of a course entry:
+## Usage
+
+It's probably simplest to use [PHP for Windows](https://windows.php.net/download/) in command-line mode.
+
+Recommended usage:
+
+`php courses_to_json.php "courses_list_from_rishum=<semester>&try_until_all_downloaded=true&verbose=true"`
+
+(yes, I should have used getopt...)
+
+Replace `<semester>` with the desired semester in the following format: `YYYYSS`, for example `202001` for a Winter 2020-2021 semester.
+
+The result will be saved in a file named `courses_<semester>.json`.
+
+Refer to the source code for other options.
+
+## Example
+
+An example of a course entry:
+
 ```json
 {
    "general":{
