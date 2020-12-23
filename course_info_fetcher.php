@@ -418,9 +418,13 @@ function is_valid_rishum_html($html) {
 }
 
 function fix_course_html($html) {
-    $p = '#(<a href=\'http://techmvs\.technion\.ac\.il/cics/wmn/wmrns1x\?'
-        .'PSEM=\d+&amp;PSUB=\d+&amp;PGRP=\d+&amp;PLAST=\d+\'>)\1(.*?</a>)\2#u';
-    return preg_replace($p, '$1$2', $html);
+    do {
+        $p = '#(<a href=\'http://techmvs\.technion\.ac\.il/cics/wmn/wmrns1x\?'
+            .'PSEM=\d+&amp;PSUB=\d+&amp;PGRP=\d+&amp;PLAST=\d+\'>)\1(.*?</a>)\2#u';
+        $html = preg_replace($p, '$1$2', $html, -1, $count);
+    } while ($count > 0);
+
+    return $html;
 }
 
 function is_course_closed(\DOMXPath $xpath) {
