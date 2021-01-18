@@ -9,10 +9,16 @@ set_error_handler(
 
 require_once 'course_info_fetcher.php';
 
-$options = [];
-if ($argc > 1) {
-    parse_str($argv[1], $options);
-}
+$longopts  = [
+    "cache_dir:",
+    "semester:",
+    "repfile_cache_life:",
+    "course_cache_life:",
+    "simultaneous_downloads:",
+    "download_timeout:",
+    "verbose",
+];
+$options = getopt('', $longopts);
 
 $fetched = course_info_fetcher\fetch($options);
 if ($fetched === false) {

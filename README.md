@@ -10,11 +10,9 @@ It's probably simplest to use [PHP for Windows](https://windows.php.net/download
 
 Recommended usage:
 
-`php courses_to_json.php "courses_list_from_rishum=<semester>&try_until_all_downloaded=true&verbose=true"`
+`php courses_to_json.php --semester <semester> --verbose`
 
-(yes, I should have used getopt...)
-
-Replace `<semester>` with the desired semester in the following format: `YYYYSS`, for example `202001` for a Winter 2020-2021 semester.
+Replace `<semester>` with the desired semester in the following format: `YYYYSS`, for example `201901` for a Winter 2019-2020 semester.
 
 The result will be saved in a file named `courses_<semester>.json`.
 

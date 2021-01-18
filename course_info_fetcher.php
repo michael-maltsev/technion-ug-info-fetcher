@@ -11,13 +11,12 @@ function fetch($options = []) {
     global $course_info_fetcher_verbose;
 
     $cache_dir = $options['cache_dir'] ?? 'course_info_cache';
-    $courses_list_from_rishum = $options['courses_list_from_rishum'] ?? null;
+    $semester = $options['semester'] ?? null;
     $repfile_cache_life = intval($options['repfile_cache_life'] ?? 60*60*24*365*10);
     $course_cache_life = intval($options['course_cache_life'] ?? 60*60*24*365*10);
     $simultaneous_downloads = intval($options['simultaneous_downloads'] ?? 64);
     $download_timeout = intval($options['download_timeout'] ?? 60*10);
-    $try_until_all_downloaded = filter_var($options['try_until_all_downloaded'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
-    $course_info_fetcher_verbose = filter_var($options['verbose'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
+    $course_info_fetcher_verbose = isset($options['verbose']);
 
     if (!is_dir($cache_dir)) {
         mkdir($cache_dir);
@@ -25,7 +24,7 @@ function fetch($options = []) {
 
     log_verbose("Downloading list of courses...\n");
 
-    if (!isset($courses_list_from_rishum)) {
+    if (!isset($semester)) {
         $repfile_filename = "$cache_dir/REPFILE.zip";
         if (!download_repfile($repfile_filename, $repfile_cache_life)) {
             return false;
@@ -38,8 +37,6 @@ function fetch($options = []) {
 
         list($semester, $courses) = $data;
     } else {
-        $semester = $courses_list_from_rishum;
-
         $courses = get_courses_from_rishum($semester);
         if ($courses === false) {
             return false;
@@ -51,15 +48,13 @@ function fetch($options = []) {
     list($downloaded, $failed) = download_courses(
         $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
 
-    if ($try_until_all_downloaded) {
-        while ($failed > 0) {
-            log_verbose("Re-trying download for $failed failed courses...\n");
-            sleep(10);
-            list($downloaded_new, $failed) = download_courses(
-                $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
+    while ($failed > 0) {
+        log_verbose("Re-trying download for $failed failed courses...\n");
+        sleep(10);
+        list($downloaded_new, $failed) = download_courses(
+            $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
 
-            $downloaded += $downloaded_new;
-        }
+        $downloaded += $downloaded_new;
     }
 
     log_verbose("Parsing downloaded data...\n");
