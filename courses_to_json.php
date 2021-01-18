@@ -20,8 +20,8 @@ if ($fetched === false) {
     exit(1);
 }
 
-if ($fetched['downloaded'] == 0) {
-    echo "No courses were downloaded\n";
+if (count($fetched['info']) == 0) {
+    echo "No courses were fetched\n";
     exit(1);
 }
 
