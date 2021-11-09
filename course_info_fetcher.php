@@ -2,11 +2,6 @@
 
 namespace course_info_fetcher;
 
-/*
- * Unusual courses so far: 014006, 016208, 394902, 014146
- * Buggy course pages: 014146, 014325, 014506, 014708, 014878, 014880, 014881, 014958, 017001, 064209, 094241, 094334
- * */
-
 function fetch($options = []) {
     global $course_info_fetcher_verbose;
 
@@ -67,32 +62,22 @@ function fetch($options = []) {
     $fetched_info = [];
     foreach ($courses as $course) {
         $html = file_get_contents("$cache_dir/$semester/$course.html");
-        if ($html == '') {
-            continue;
-        }
 
-        $html = fix_course_html($html);
+        // Replace invalid UTF-8 characters.
+        // https://stackoverflow.com/a/8215387
+        $html = mb_convert_encoding($html, 'UTF-8', 'UTF-8');
 
         $dom = new \DOMDocument;
         $dom->loadHTML($html);
         libxml_clear_errors();
         $xpath = new \DOMXPath($dom);
 
-        $errors = get_course_errors($xpath);
-        if (count($errors) > 0) {
-            assert(count($errors) == 1);
-            assert(preg_match('#^מקצוע \d{6} לא קיים$#u', $errors[0]));
+        if (!is_course_active_in_semester($xpath, $semester)) {
             continue;
         }
 
-        if (is_course_closed($xpath)) {
-            continue;
-        }
+        $info = get_course_info($dom, $xpath, $semester);
 
-        $info = get_course_info($dom, $xpath);
-        assert(!isset($info['general']['פקולטה']));
-        $faculty_name = faculty_name_from_course_number($course);
-        $info['general'] = ['פקולטה' => $faculty_name] + $info['general'];
         //file_put_contents($debug_filename, print_r($info, true), FILE_APPEND);
         $fetched_info[] = $info;
     }
@@ -107,37 +92,10 @@ function fetch($options = []) {
     ];
 }
 
-function faculty_name_from_course_number($course) {
-    $faculties = [
-        '01' => 'הנדסה אזרחית וסביבתית',
-        '03' => 'הנדסת מכונות',
-        '04' => 'הנדסת חשמל',
-        '05' => 'הנדסה כימית',
-        '06' => 'הנדסת ביוטכנולוגיה ומזון',
-        '08' => 'הנדסת אוירונוטיקה וחלל',
-        '09' => 'הנדסת תעשייה וניהול',
-        '10' => 'מתמטיקה',
-        '11' => 'פיזיקה',
-        '12' => 'כימיה',
-        '13' => 'ביולוגיה',
-        '19' => 'מתמטיקה שימושית',
-        '20' => 'ארכיטקטורה ובינוי ערים',
-        '21' => 'חינוך למדע וטכנולוגיה',
-        '23' => 'מדעי המחשב',
-        '27' => 'רפואה',
-        '31' => 'מדע והנדסה של חומרים',
-        '32' => 'לימודים הומניסטיים ואמנויות',
-        '33' => 'הנדסה ביו-רפואית',
-        '39' => 'ספורט',
-    ];
-    $two_digits = substr($course, 0, 2);
-    return $faculties[$two_digits] ?? '';
-}
-
 function download_repfile($repfile_filename, $repfile_cache_life) {
     if (!is_valid_zip_file($repfile_filename) ||
         time() - filemtime($repfile_filename) > $repfile_cache_life) {
-        log_verbose("\tDownloading Repfile...\n");
+        log_verbose("Downloading Repfile...\n");
         $result = file_put_contents($repfile_filename,
             fopen('http://ug3.technion.ac.il/rep/REPFILE.zip', 'r'));
         if ($result === false) {
@@ -254,65 +212,167 @@ function heb_semester_to_num($year, $season) {
 }
 
 function get_courses_from_rishum($semester) {
-    $ch = curl_init('https://ug3.technion.ac.il/rishum/search');
+    $ch = curl_init();
 
-    $result = find_courses_in_rishum_by_faculty($ch, $semester, '');
-    list($success, $data) = $result;
-    if ($success) {
-        sort($data);
-        return $data;
-    }
+    curl_setopt($ch, CURLOPT_HEADER, false);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
-    if ($data != 'too_many') {
+    $session_params = get_courses_session_params($ch);
+    if ($session_params === false) {
         return false;
     }
 
-    // List of faculty numbers, based on Rishum's web interface.
-    $faculty_numbers = [20, 13, 300, 1, 33, 7, 5, 8, 6, 4, 3, 9, 21, 350, 12, 32, 31, 23, 99, 10, 11, 27, 450];
+    $session_cookie = $session_params['session_cookie'];
+    $sesskey = $session_params['sesskey'];
 
-    $courses = [];
+    log_verbose("Getting list of courses from Rishum:\n");
+    log_verbose("Page 1...\n");
 
-    log_verbose("\tGetting list of courses from Rishum:");
+    $result = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
+    list($success, $data) = $result;
+    if (!$success) {
+        return false;
+    }
 
-    for ($i = 0; $i < count($faculty_numbers); $i++) {
-        $faculty_number = $faculty_numbers[$i];
-        log_verbose(" $faculty_number");
+    $courses = $data;
 
-        $result = find_courses_in_rishum_by_faculty($ch, $semester, $faculty_number);
+    for ($page = 1; ; $page++) {
+        log_verbose("Page " . ($page + 1) . "...\n");
+
+        $result = get_courses_next_page($ch, $session_cookie, $page);
         list($success, $data) = $result;
         if (!$success) {
             return false;
         }
 
+        if (count($data) == 0) {
+            break;
+        }
+
         $courses = array_unique(array_merge($courses, $data));
     }
 
-    log_verbose("\n\t...got list of " . count($courses) . " courses\n");
+    log_verbose("Got list of " . count($courses) . " courses\n");
 
     sort($courses);
     return $courses;
 }
 
-function find_courses_in_rishum_by_faculty($ch, $semester, $faculty_number) {
-    $post_fields = "CNM=&CNO=&PNT=&FAC=$faculty_number&LLN=&LFN=&SEM=$semester"
-        ."&RECALL=Y&D1=on&D2=on&D3=on&D4=on&D5=on&D6=on&FTM=&TTM=&SIL="
-        ."&OPTCAT=on&OPTSEM=on&OPTSTUD=on&doSearch=Y&Search=+++%D7%97%D7%A4%D7%A9+++";
+function get_courses_session_params($ch) {
+    $url = 'https://students.technion.ac.il/local/technionsearch/search';
 
-    curl_setopt($ch, CURLOPT_HEADER, false);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $post_fields);
+    curl_setopt($ch, CURLOPT_URL, $url);
+
+    // https://stackoverflow.com/a/25098798
+    $cookies = [];
+    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($ch, $header_line) use (&$cookies) {
+        if (preg_match('/^Set-Cookie:\s*([^=]+)=([^;]+)/i', $header_line, $matches)) {
+            $cookies[$matches[1]] = $matches[2];
+        }
+        return strlen($header_line); // needed by curl
+    });
 
     $html = curl_exec($ch);
-    if ($html === false)
+    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($ch, $header_line) {
+        return strlen($header_line);
+    });
+    if ($html === false) {
+        return false;
+    }
+
+    if (!isset($cookies['MoodleSessionstudentsprod'])) {
+        return false;
+    }
+
+    $session_cookie = $cookies['MoodleSessionstudentsprod'];
+
+    $p = '#\nM\.cfg = {"wwwroot":"https:\\\\/\\\\/students\.technion\.ac\.il","sesskey":"([0-9a-zA-Z]+)"#u';
+    if (!preg_match($p, $html, $matches)) {
+        return false;
+    }
+
+    $sesskey = $matches[1];
+
+    return [
+        'session_cookie' => $session_cookie,
+        'sesskey' => $sesskey,
+    ];
+}
+
+function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
+    $url = 'https://students.technion.ac.il/local/technionsearch/results';
+
+    $post_fields = 'sesskey=' . $sesskey
+        . '&_qf__local_technionsearch_form_search=1'
+        . '&course_name='
+        . '&academic_framework=_qf__force_multiselect_submission'
+        . '&academic_framework%5B%5D=1'
+        . '&academic_framework%5B%5D=2'
+        . '&min_points=0.0'
+        . '&max_points=99.0'
+        . '&faculties=_qf__force_multiselect_submission'
+        . '&faculties%5B%5D=510'
+        . '&faculties%5B%5D=20'
+        . '&faculties%5B%5D=13'
+        . '&faculties%5B%5D=1'
+        . '&faculties%5B%5D=33'
+        . '&faculties%5B%5D=520'
+        . '&faculties%5B%5D=5'
+        . '&faculties%5B%5D=8'
+        . '&faculties%5B%5D=6'
+        . '&faculties%5B%5D=4'
+        . '&faculties%5B%5D=3'
+        . '&faculties%5B%5D=85'
+        . '&faculties%5B%5D=9'
+        . '&faculties%5B%5D=21'
+        . '&faculties%5B%5D=12'
+        . '&faculties%5B%5D=32'
+        . '&faculties%5B%5D=31'
+        . '&faculties%5B%5D=610'
+        . '&faculties%5B%5D=23'
+        . '&faculties%5B%5D=970'
+        . '&faculties%5B%5D=511'
+        . '&faculties%5B%5D=10'
+        . '&faculties%5B%5D=64'
+        . '&faculties%5B%5D=11'
+        . '&faculties%5B%5D=27'
+        . '&lecturer_name='
+        . '&daycheckboxgroup%5Bsunday%5D=0'
+        . '&daycheckboxgroup%5Bsunday%5D=1'
+        . '&daycheckboxgroup%5Bmonday%5D=0'
+        . '&daycheckboxgroup%5Bmonday%5D=1'
+        . '&daycheckboxgroup%5Btuesday%5D=0'
+        . '&daycheckboxgroup%5Btuesday%5D=1'
+        . '&daycheckboxgroup%5Bwednesday%5D=0'
+        . '&daycheckboxgroup%5Bwednesday%5D=1'
+        . '&daycheckboxgroup%5Bthursday%5D=0'
+        . '&daycheckboxgroup%5Bthursday%5D=1'
+        . '&daycheckboxgroup%5Bfriday%5D=0'
+        . '&daycheckboxgroup%5Bfriday%5D=1'
+        . '&fromtime=0.00'
+        . '&totime=24.00'
+        . '&semesters=_qf__force_multiselect_submission'
+        . '&semesters%5B%5D=' . $semester
+        . '&submitbutton=%D7%97%D7%99%D7%A4%D7%95%D7%A9';
+
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $post_fields);
+    curl_setopt($ch, CURLOPT_COOKIE, 'MoodleSessionstudentsprod=' . $session_cookie);
+
+    $html = curl_exec($ch);
+    if ($html === false) {
         return [false, 'curl'];
+    }
 
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    if ($code != 200)
+    if ($code != 200) {
         return [false, 'http'];
+    }
 
-    if (!is_valid_rishum_html($html))
+    if (!is_valid_rishum_html($html)) {
         return [false, 'html'];
+    }
 
     $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
 
@@ -323,25 +383,64 @@ function find_courses_in_rishum_by_faculty($ch, $semester, $faculty_number) {
 
     libxml_use_internal_errors($prev_libxml_use_internal_errors);
 
-    $errors = get_course_errors($xpath);
-    if (count($errors) > 0) {
-        assert(count($errors) == 1);
-        if ($errors[0] == 'לא נמצאו מקצועות מתאימים') {
-            return [true, []];
-        }
-
-        assert($errors[0] == 'כמות המידע העונה לתנאי החיפוש עברה את המקסימום המותריש לצמצם את טווח החיפוש');
-        return [false, 'too_many'];
+    $courses = get_courses_from_xpath($xpath);
+    if (count($courses) == 0) {
+        return [false, 'no_courses'];
     }
 
-    $courses = $xpath->query(
-        "//section[@class='search-results']/div[@class='result-row']/div[@class='course-number']/a");
-    $courses = iterator_to_array($courses);
-    $courses = array_map(function ($node) {
-        return trim($node->nodeValue);
-    }, $courses);
+    return [true, $courses];
+}
+
+function get_courses_next_page($ch, $session_cookie, $page) {
+    $url = 'https://students.technion.ac.il/local/technionsearch/results?page=' . $page;
+
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, false);
+    curl_setopt($ch, CURLOPT_COOKIE, 'MoodleSessionstudentsprod=' . $session_cookie);
+
+    $html = curl_exec($ch);
+    if ($html === false) {
+        return [false, 'curl'];
+    }
+
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    if ($code != 200) {
+        return [false, 'http'];
+    }
+
+    if (!is_valid_rishum_html($html)) {
+        return [false, 'html'];
+    }
+
+    $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
+
+    $dom = new \DOMDocument;
+    $dom->loadHTML($html);
+    libxml_clear_errors();
+    $xpath = new \DOMXPath($dom);
+
+    libxml_use_internal_errors($prev_libxml_use_internal_errors);
+
+    $courses = get_courses_from_xpath($xpath);
+    if (count($courses) == 0) {
+        assert(strpos($html, '<h3>לא נמצאו קורסים</h3>') !== false);
+    }
 
     return [true, $courses];
+}
+
+function get_courses_from_xpath(\DOMXPath $xpath) {
+    $class_rule = xpath_class_rule('list-group-item');
+    $courses = $xpath->query("//section[@id='region-main']//a[$class_rule]");
+    $courses = iterator_to_array($courses);
+    $courses = array_map(function ($node) {
+        $href = $node->getAttribute('href');
+        $course = explode('/', $href, 3)[1];
+        $course = str_pad($course, 6, '0', STR_PAD_LEFT);
+        return $course;
+    }, $courses);
+
+    return $courses;
 }
 
 function download_courses($courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout) {
@@ -351,7 +450,7 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
     $requests = array_map(function ($course) use ($semester, $cache_dir) {
         $suffix = $semester != '' ? "/$semester" : '';
         return [
-            'url' => "https://ug3.technion.ac.il/rishum/course/$course$suffix",
+            'url' => "https://students.technion.ac.il/local/technionsearch/course/$course$suffix",
             'filename' => "$cache_dir/$semester/$course.html"
         ];
     }, $courses);
@@ -367,11 +466,11 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
     $requests = array_filter($requests, $should_request_course);
     $requested_count = count($requests);
 
-    log_verbose("\tDownloading data of $requested_count courses:");
+    log_verbose("Downloading data of $requested_count courses:\n");
 
     foreach (array_chunk($requests, $simultaneous_downloads) as $i => $chunk) {
         multi_request($chunk, [CURLOPT_FAILONERROR => true, CURLOPT_TIMEOUT => $download_timeout]);
-        log_verbose(' ' . ($i * $simultaneous_downloads + count($chunk)));
+        log_verbose("Downloaded " . ($i * $simultaneous_downloads + count($chunk)) . "...\n");
     }
 
     $requests = array_filter($requests, function ($request) use ($should_request_course) {
@@ -390,19 +489,14 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
 
     $failed_count = count($requests);
 
-    log_verbose("\n\t...done, $failed_count of $requested_count failed\n");
+    log_verbose("Done, $failed_count of $requested_count failed\n");
     return [$requested_count - $failed_count, $failed_count];
 }
 
 function is_valid_rishum_html($html) {
     // Verifies that the html response is not truncated. Helps detect partial server responses.
-    $html_rtrimmed = rtrim($html);
-    if (substr($html_rtrimmed, -strlen('</html>')) !== '</html>') {
-        // If a search result has only one result, the page ends with a JS redirect.
-        $p = "#<script>location\.href='[^']*?'</script>$#";
-        if (!preg_match($p, $html_rtrimmed)) {
-            return false;
-        }
+    if (substr(rtrim($html), -strlen('</html>')) !== '</html>') {
+        return false;
     }
 
     if (strpos($html, 'Warning: mysqli') !== false) {
@@ -412,192 +506,407 @@ function is_valid_rishum_html($html) {
     return true;
 }
 
-function fix_course_html($html) {
-    do {
-        $p = '#(<a href=\'http://techmvs\.technion\.ac\.il/cics/wmn/wmrns1x\?'
-            .'PSEM=\d+&amp;PSUB=\d+&amp;PGRP=\d+&amp;PLAST=\d+\'>)\1(.*?</a>)\2#u';
-        $html = preg_replace($p, '$1$2', $html, -1, $count);
-    } while ($count > 0);
-
-    return $html;
+function is_course_active_in_semester(\DOMXPath $xpath, $semester) {
+    $semester_data = $xpath->query("//div[@id='s_$semester']");
+    $semester_data = iterator_to_array($semester_data);
+    return count($semester_data) > 0;
 }
 
-function is_course_closed(\DOMXPath $xpath) {
-    $properties = $xpath->query("//div[@class='properties-close']");
-    assert($properties->length == 1);
-    $properties = iterator_to_array($properties);
-    $properties = array_map(function ($node) {
-        return trim($node->nodeValue);
-    }, $properties);
+function get_course_info(\DOMDocument $dom, \DOMXPath $xpath, $semester) {
+    $general = array_merge(
+        get_course_general_info($dom, $xpath),
+        get_course_semester_info($dom, $xpath, $semester)
+    );
 
-    return $properties[0] == 'המקצוע לא נלמד בסמסטר זה';
-}
+    $only_lectures = true;
+    foreach ($general as $k => $v) {
+        if (in_array($k, [
+            'תרגיל',
+            'סמינר/פרויקט',
+            'מעבדה',
+        ]) && $v != '0') {
+            $only_lectures = false;
+            break;
+        }
+    }
+    $schedule = get_course_schedule($dom, $xpath, $semester, $only_lectures);
 
-function get_course_errors(\DOMXPath $xpath) {
-    $errors = $xpath->query("//div[@class='error-msg']");
-    $errors = iterator_to_array($errors);
-    $errors = array_map(function ($node) {
-        return trim($node->nodeValue);
-    }, $errors);
-
-    return $errors;
-}
-
-function get_course_info(\DOMDocument $dom, \DOMXPath $xpath) {
     $info = [
-        'general' => get_course_general_info($dom, $xpath),
-        'schedule' => get_course_schedule($dom, $xpath)
+        'general' => $general,
+        'schedule' => $schedule
     ];
     return $info;
 }
 
 function get_course_general_info(\DOMDocument $dom, \DOMXPath $xpath) {
-    $properties = $xpath->query("//div[@class='property']");
-    $properties = iterator_to_array($properties);
-    $properties = array_map(function ($node) {
-        return trim($node->nodeValue);
-    }, $properties);
+    $info = [];
 
-    $property_values= $xpath->query("//div[@class='property-value']");
-    $property_values = iterator_to_array($property_values);
-    $property_values = array_map(function ($node) use ($dom) {
-        $xml = $dom->saveXML($node);
-        $stripped = strip_tags($xml, '<br><hr>');
-        $stripped = preg_replace('#(<br[^>]*>\s*)?<hr.*?>#u', "\n====================\n", $stripped);
-        $stripped = preg_replace('#<br.*?>#u', "\n", $stripped);
-        $stripped = preg_replace('#^[^\S\n]+|[^\S\n]+$#um', '', $stripped);
-        return trim($stripped);
-    }, $property_values);
+    $class_rule = xpath_class_rule('page-header-headings');
+    $page_header = $xpath->query("//div[$class_rule]/h1");
+    $page_header = iterator_to_array($page_header);
+    assert(count($page_header) == 1);
+    $page_header = $page_header[0];
+    $page_header = trim($page_header->textContent);
+    $matched = preg_match('#^(.*?)\s*-\s*(.*)$#u', $page_header, $matches);
+    assert($matched);
+    $info['מספר מקצוע'] = str_pad($matches[1], 6, '0', STR_PAD_LEFT);
+    $info['שם מקצוע'] = $matches[2];
 
-    $info = array_combine($properties, $property_values);
+    $class_rule = xpath_class_rule('card-text');
+    $card_text = $xpath->query("//div[@id='general_information']/p[$class_rule][position()=1]");
+    $card_text = iterator_to_array($card_text);
+    assert(count($card_text) == 1);
+    $card_text = $card_text[0];
+    $card_text = trim($card_text->textContent);
+    $card_text = preg_replace_callback('#\s+#u', function ($matches) {
+        return substr_count($matches[0], "\n") >= 2 ? "\n" : ' ';
+    }, $card_text);
+    $info['סילבוס'] = $card_text;
 
-    // Remove unhelpful data fields.
-    unset($info['אתר הקורס'], $info['עבור לסמסטר'], $info['מיקום']);
+    $class_rule = xpath_class_rule('card-subtitle');
+    $card_subtitle = $xpath->query("//div[@id='general_information']/h6[$class_rule]");
+    $card_subtitle = iterator_to_array($card_subtitle);
+    assert(count($card_subtitle) == 1);
+    $card_subtitle = $card_subtitle[0];
+    $card_subtitle = trim(DOMinnerHTML($card_subtitle));
+    $matched = preg_match('#^פקולטה:\s*(.*?)\s*<br[^>]*>([\s\S]*)$#u', $card_subtitle, $matches);
+    assert($matched);
+    $info['פקולטה'] = $matches[1];
+    $degrees = trim($matches[2]);
+    if ($degrees != '') {
+        $degrees = explode("\n", $degrees);
+        $degrees_text = [];
+        foreach ($degrees as $degree) {
+            $text = trim($degree);
+            assert(str_starts_with($text, '|'));
+            $text = substr($text, strlen('|'));
+            $degrees_text[] = trim($text);
+        }
+        $info['מסגרת לימודים'] = implode("\n", $degrees_text);
+    }
+
+    $class_rule = xpath_class_rule('card-title');
+    $card_title = $xpath->query("//div[@id='general_information']/h5[$class_rule]");
+    $card_title = iterator_to_array($card_title);
+    $card_title = array_map(function ($node) {
+        $text = trim($node->textContent);
+        assert(in_array($text, [
+            // 'מקצועות זהים',
+            'מקצועות ללא זיכוי נוסף',
+            // 'מקצועות ללא זיכוי נוסף (מוכלים)',
+            'מקצועות ללא זיכוי נוסף (מכילים)',
+            'מקצועות צמודים',
+            'מקצועות קדם',
+        ]));
+        return $text;
+    }, $card_title);
+
+    $class_rule = xpath_class_rule('card-text');
+    $card_text = $xpath->query("//div[@id='general_information']/p[$class_rule][position()>1]");
+    $card_text = iterator_to_array($card_text);
+    $card_text = array_map(function ($node) {
+        $text = '';
+        $children  = $node->childNodes;
+        foreach ($children as $child) {
+            if ($child->nodeName == 'span') {
+                $course = trim($child->textContent);
+            } else if ($child->nodeName == 'a') {
+                $course = preg_replace('#^(\d+) - .*$#u', '$1', trim($child->textContent));
+            } else {
+                $text .= $child->textContent;
+                continue;
+            }
+
+            $course = str_pad($course, 6, '0', STR_PAD_LEFT);
+            assert(preg_match('#^\d{6}$#u', $course));
+
+            $text .= $course;
+        }
+
+        $text = preg_replace('#\s+#u', ' ', trim($text));
+        return $text;
+    }, $card_text);
+    assert(count($card_title) == count($card_text));
+
+    $info = array_merge($info, array_combine($card_title, $card_text));
 
     return $info;
 }
 
-function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath) {
-    $properties = $xpath->query(
-        "//table[@class='rishum-groups']//tr[1]/td[not(position()=2)]");
-    $properties = iterator_to_array($properties);
-    $properties = array_map(function ($node) {
-        return trim($node->nodeValue);
-    }, $properties);
-
-    $prop_count = count($properties);
-    $staff_sentinel = '{@SIS@}';
-
-    $property_values = $xpath->query(
-        "//table[@class='rishum-groups']//tr[position()>1]/td[not(position()=2)]");
-    $property_values = iterator_to_array($property_values);
-    assert((count($property_values) % $prop_count) == 0);
-    $property_values = array_map(function ($node) use ($dom, $staff_sentinel) {
-        $xml = $dom->saveXML($node);
-        $stripped = strip_tags($xml, '<a><br>');
-        $p = '#<a href="http://techmvs\.technion\.ac\.il/cics/wmn/wmrns1x\?'
-            .'PSEM=(\d+)&amp;PSUB=(\d+)&amp;PGRP=(\d+)&amp;PLAST=\d+">#u';
-        $stripped = preg_replace($p,
-            '$0$3'.$staff_sentinel, $stripped, -1, $count);
-        assert($count == substr_count($stripped, '<a'));
-        $stripped = strip_tags($stripped, '<br>');
-        $stripped = preg_replace('#<.*?>#u', "\n", $stripped);
-        $stripped = preg_replace('#^[^\S\n]+|[^\S\n]+$#um', '', $stripped);
-        return rtrim($stripped);
-    }, $property_values);
-
-    $info_rows = array_chunk($property_values, $prop_count);
+function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester) {
     $info = [];
-    foreach ($info_rows as $row) {
-        assert(!empty($row[0]));
-        if (count(array_filter(array_slice($row, 1))) == 0) {
-            // Only the registration group, skip...
+
+    $class_rule = xpath_class_rule('card-title');
+    $card_title = $xpath->query("//div[@id='s_$semester']/h5[$class_rule]");
+    $card_title = iterator_to_array($card_title);
+    $card_title_nodes = [];
+    foreach ($card_title as $node) {
+        $text = trim($node->textContent);
+        if (in_array($text, [
+            'קבוצות רישום',
+            'אין קבוצות רישום',
+        ])) {
             continue;
         }
 
-        $groups = explode("\n", $row[1]);
-        foreach ($groups as $group) {
-            if ($group === '') {
-                /* // Verify that it's a known buggy course page.
-                preg_match('#<div class="property-value">\s*(\d{6})\b#u', $html, $matches);
-                assert(in_array($matches[1], ['014146', '014325', '014506', '014708', '014878', '014880', '014881', '014958', '017001', '064209', '094241', '094334'], true));
-                //*/
+        assert(in_array($text, [
+            'שעות שבועיות',
+            'אחראים',
+            'הערות',
+            'מבחנים',
+            'בחנים',
+        ]), $text);
+        $card_title_nodes[$text] = $node;
+    }
 
-                foreach ($row as $k => $v) {
-                    if ($v !== '') {
-                        $ex = explode("\n", $v, 2);
-                        if ($ex[0] === '') {
-                            $row[$k] = $ex[1] ?? '';
-                        }
-                    }
-                }
+    $hours = $card_title_nodes['שעות שבועיות'];
+    do {
+        $hours = $hours->nextSibling;
+    } while ($hours->nodeName == '#text');
+    assert($hours->nodeName == 'p' && $hours->getAttribute('class') == 'card-text');
+    $hours = trim($hours->textContent);
+    $hours = preg_split('#\s*•\s*#u', $hours);
+    foreach ($hours as $item) {
+        $mapping = [
+            'נקודות אקדמיות' => 'נקודות',
+            'שעות הרצאה' => 'הרצאה',
+            'שעות תרגול' => 'תרגיל',
+            'שעות פרוייקט' => 'סמינר/פרויקט',
+            'שעות מעבדה' => 'מעבדה',
+        ];
+        $info_key = null;
+        $info_value = null;
+        foreach ($mapping as $k => $v) {
+            $suffix = ' ' . $k;
+            if (str_ends_with($item, $suffix)) {
+                $info_key = $v;
+                $info_value = substr($item, 0, -strlen($suffix));
+                break;
+            }
+        }
+        assert(isset($info_key, $info_value));
+        assert(preg_match('#^\d+(\.5)?$#u', $info_value));
+        $info[$info_key] = $info_value;
+    }
+
+    if (isset($card_title_nodes['אחראים'])) {
+        $staff = $card_title_nodes['אחראים'];
+        do {
+            $staff = $staff->nextSibling;
+        } while ($staff->nodeName == '#text');
+        assert($staff->nodeName == 'p' && $staff->getAttribute('class') == 'card-text');
+        $staff = trim($staff->textContent);
+        $info['אחראים'] = $staff;
+    }
+
+    if (isset($card_title_nodes['הערות'])) {
+        $notes = $card_title_nodes['הערות'];
+        do {
+            $notes = $notes->nextSibling;
+        } while ($notes->nodeName == '#text');
+        assert($notes->nodeName == 'ul');
+        $note_text = [];
+        for ($note = $notes->firstChild; $note; $note = $note->nextSibling) {
+            if ($note->nodeName == '#text') {
                 continue;
             }
-
-            $group_row = [];
-            foreach ($row as $k => $v) {
-                if ($k == 0) {
-                    // This is the registration group id,
-                    // a single number for the whole row.
-                    assert(strpos($v, "\n") === false);
-                    $group_row[$properties[$k]] = $v;
-                    continue;
-                }
-
-                if ($v === '') {
-                    $group_row[$properties[$k]] = '';
-                    continue;
-                }
-
-                if (strpos($v, $staff_sentinel) === false) {
-                    $ex = explode("\n", $v, 2);
-                    $group_row[$properties[$k]] = $ex[0];
-                    $row[$k] = $ex[1] ?? '';
-                    continue;
-                }
-
-                $ex = explode("\n", $v);
-
-                /* // Duplicate staff check.
-                $dups = array_filter(array_count_values($ex), function ($item) { return $item > 1; });
-                if (count($dups) > 1 && count(array_unique($dups)) > 1) {
-                    echo "======================\n";
-                    preg_match('#<div class="property-value">\s*(\d{6})\b#u', $html, $matches);
-                    echo $matches[1]."\n";
-                    print_r($dups);
-                    echo "\n";
-                }
-                //*/
-
-                $ex = array_filter($ex, function ($sm) use ($groups, $group, $staff_sentinel) {
-                    $sm = explode($staff_sentinel, $sm);
-                    assert(count($sm) == 2);
-                    assert(in_array($sm[0], $groups));
-                    return $sm[0] == $group;
-                });
-                $ex = array_map(function ($sm) use ($staff_sentinel) {
-                    return explode($staff_sentinel, $sm, 2)[1];
-                }, $ex);
-                $ex = array_unique($ex);
-
-                $group_row[$properties[$k]] = str_replace(
-                    $staff_sentinel, ';', implode("\n", $ex));
-            }
-
-            $info[] = $group_row;
+            assert($note->nodeName == 'li');
+            $note_text[] = trim($note->textContent);
         }
+        $note_text = implode("\n====================\n", $note_text);
+        $info['הערות'] = $note_text;
+    }
 
-        // Verify that all of the information was consumed.
-        $row = array_map(function ($v) use ($staff_sentinel) {
-            if (strpos($v, $staff_sentinel) !== false) {
-                return '';
+    $exam_types = ['מבחנים', 'בחנים'];
+    foreach ($exam_types as $exam_type) {
+        if (isset($card_title_nodes[$exam_type])) {
+            $exams = $card_title_nodes[$exam_type];
+            $exam = $exams->nextSibling;
+            while ($exam->nodeName == '#text') {
+                $exam = $exam->nextSibling;
             }
-            return $v;
-        }, $row);
-        assert(count(array_filter(array_slice($row, 1))) == 0);
+            while ($exam->nodeName != 'br') {
+                assert($exam->nodeName == 'span');
+                $text = trim($exam->textContent);
+                do {
+                    $exam = $exam->nextSibling;
+                } while ($exam->nodeName == '#text');
+
+                while ($exam->nodeName == 'ul') {
+                    $text .= "\n" . trim($exam->textContent);
+                    do {
+                        $exam = $exam->nextSibling;
+                    } while ($exam->nodeName == '#text');
+                }
+
+                $p = '#^(מועד [א-ת])( \(.*?\))?: #u';
+                $matched = preg_match($p, $text, $matches);
+                assert($matched);
+                $info_key = $matches[1];
+                $text = preg_replace($p, '', $text);
+
+                if ($exam_type == 'בחנים') {
+                    assert(in_array($info_key, [
+                        'מועד א',
+                        'מועד ב',
+                        'מועד ג',
+                        'מועד ד',
+                        'מועד ה',
+                    ]));
+                    $info_key = 'בוחן ' . $info_key;
+                } else {
+                    assert(in_array($info_key, [
+                        'מועד א',
+                        'מועד ב',
+                    ]));
+                }
+
+                assert(!isset($info[$info_key]));
+                $info[$info_key] = $text;
+            }
+        }
     }
 
     return $info;
+}
+
+function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $only_lectures) {
+    $class_rule = xpath_class_rule('card-title');
+    $card_title = $xpath->query("//div[@id='s_$semester']/h5[$class_rule]");
+    $card_title = iterator_to_array($card_title);
+    $schedule_node = null;
+    $empty_schedule_node = false;
+    foreach ($card_title as $node) {
+        $text = trim($node->textContent);
+        if ($text == 'קבוצות רישום') {
+            assert(!$empty_schedule_node);
+            $schedule_node = $node;
+        } else if ($text == 'אין קבוצות רישום') {
+            assert(!$schedule_node);
+            $empty_schedule_node = true;
+        }
+    }
+    assert($schedule_node || $empty_schedule_node);
+    if ($empty_schedule_node) {
+        return [];
+    }
+
+    $schedule = [];
+
+    do {
+        $schedule_node = $schedule_node->nextSibling;
+    } while ($schedule_node->nodeName == '#text');
+    assert($schedule_node->nodeName == 'div' && $schedule_node->getAttribute('class') == 'list-group');
+
+    for ($row = $schedule_node->firstChild; $row; $row = $row->nextSibling) {
+        if ($row->nodeName == '#text') {
+            continue;
+        }
+        assert($row->nodeName == 'span' && preg_match('#(^|\s)list-group-item($|\s)#u', $row->getAttribute('class')));
+
+        $group = $xpath->query(".//td[@style='width: 15%;']//span[@style='font-size: 250%;']", $row);
+        $group = iterator_to_array($group);
+        assert(count($group) == 1);
+        $group = $group[0];
+        $group = trim($group->textContent);
+
+        $subrows = $xpath->query(".//td[@style='width: 85%;']//tr", $row);
+        $subrows = iterator_to_array($subrows);
+        assert(count($subrows) > 0);
+        foreach ($subrows as $subrow) {
+            $item = [
+                'קבוצה' => $group,
+            ];
+
+            $subcolumns = $xpath->query(".//td", $subrow);
+            $subcolumns = iterator_to_array($subcolumns);
+            assert(count($subcolumns) == 6);
+
+            $item['סוג'] = trim($subcolumns[0]->textContent);
+            $item['יום'] = trim($subcolumns[1]->textContent);
+            $item['שעה'] = trim($subcolumns[2]->textContent);
+
+            $location = $subcolumns[3]->firstChild;
+            while ($location == '#text') {
+                $location = $location->nextSibling;
+            }
+            assert($location->nodeName == 'span');
+            $item['בניין'] = trim($location->textContent);
+
+            $location = $location->nextSibling;
+            if ($location) {
+                assert($location->nodeName == '#text');
+                $item['חדר'] = trim($location->textContent);
+                assert(!$location->nextSibling);
+            } else {
+                $item['חדר'] = '';
+            }
+
+            $staff_text = [];
+            for ($staff = $subcolumns[4]->firstChild; $staff; $staff = $staff->nextSibling) {
+                if ($staff->nodeName == '#text') {
+                    continue;
+                }
+                assert($staff->nodeName == 'span');
+                $text = trim($staff->textContent);
+                assert(str_starts_with($text, '| '));
+                $text = substr($text, strlen('| '));
+                $staff_text[] = trim($text);
+            }
+            $staff_text = implode("\n", $staff_text);
+            $item['מרצה/מתרגל'] = $staff_text;
+
+            $schedule[] = $item;
+        }
+    }
+
+    $lectures = [];
+    foreach ($schedule as &$item) {
+        $group = $item['קבוצה'];
+        assert($item['סוג'] == 'הרצאה' || !$only_lectures);
+        if ($item['סוג'] == 'הרצאה' && !$only_lectures) {
+            $id = substr($group, 0, -1) . '0';
+            $item['מס.'] = $id;
+
+            // The code below is only for sanity check.
+            $found_item = false;
+            $found_match = false;
+            foreach ($lectures as $lecture) {
+                if ($item['קבוצה'] != $lecture['קבוצה'] && $item['מס.'] == $lecture['מס.']) {
+                    $found_item = true;
+                    $keys = [
+                        'סוג',
+                        'יום',
+                        'שעה',
+                        'בניין',
+                        'חדר',
+                        'מרצה/מתרגל',
+                    ];
+                    $match = true;
+                    foreach ($keys as $key) {
+                        if ($item[$key] != $lecture[$key]) {
+                            $match = false;
+                            break;
+                        }
+                    }
+                    if ($match) {
+                        $found_match = true;
+                    }
+                }
+            }
+
+            if (!$found_item) {
+                $lectures[] = $item;
+            } else {
+                assert($found_match);
+            }
+        } else {
+            $item['מס.'] = $group;
+        }
+    }
+    unset($item);
+
+    return $schedule;
 }
 
 function log_verbose($msg) {
@@ -606,6 +915,22 @@ function log_verbose($msg) {
     if ($course_info_fetcher_verbose) {
         echo $msg;
     }
+}
+
+function xpath_class_rule($class) {
+    return "contains(concat(' ', normalize-space(@class), ' '), ' $class ')";
+}
+
+// https://stackoverflow.com/a/2087136
+function DOMinnerHTML(\DOMNode $element) {
+    $innerHTML = '';
+    $children  = $element->childNodes;
+
+    foreach ($children as $child) {
+        $innerHTML .= $element->ownerDocument->saveHTML($child);
+    }
+
+    return $innerHTML;
 }
 
 // https://stackoverflow.com/a/17496494
