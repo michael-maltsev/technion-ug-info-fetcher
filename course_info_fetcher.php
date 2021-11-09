@@ -725,7 +725,7 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
             while ($exam->nodeName == '#text') {
                 $exam = $exam->nextSibling;
             }
-            while ($exam->nodeName != 'br') {
+            while (!in_array($exam->nodeName, ['br', 'h5'])) {
                 assert($exam->nodeName == 'span');
                 $text = trim($exam->textContent);
                 do {
@@ -739,11 +739,14 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
                     } while ($exam->nodeName == '#text');
                 }
 
-                $p = '#^(מועד [א-ת])( \(.*?\))?: #u';
+                $p = '#^(מועד [א-ת])(?: \((.*?)\))?: #u';
                 $matched = preg_match($p, $text, $matches);
                 assert($matched);
                 $info_key = $matches[1];
                 $text = preg_replace($p, '', $text);
+                if (isset($matches[2])) {
+                    $text .= "\n" . $matches[2];
+                }
 
                 if ($exam_type == 'בחנים') {
                     assert(in_array($info_key, [
@@ -761,8 +764,11 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
                     ]));
                 }
 
-                assert(!isset($info[$info_key]));
-                $info[$info_key] = $text;
+                if (isset($info[$info_key])) {
+                    $info[$info_key] .= "\n\n" . $text;
+                } else {
+                    $info[$info_key] = $text;
+                }
             }
         }
     }
