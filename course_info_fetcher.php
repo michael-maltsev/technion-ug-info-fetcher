@@ -733,7 +733,14 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
                 } while ($exam->nodeName == '#text');
 
                 while ($exam->nodeName == 'ul') {
-                    $text .= "\n" . trim($exam->textContent);
+                    for ($li = $exam->firstChild; $li; $li = $li->nextSibling) {
+                        if ($li->nodeName == '#text') {
+                            continue;
+                        }
+                        assert($li->nodeName == 'li');
+                        $text .= "\n" . trim($li->textContent);
+                    };
+
                     do {
                         $exam = $exam->nextSibling;
                     } while ($exam->nodeName == '#text');
