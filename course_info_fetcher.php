@@ -22,7 +22,7 @@ function fetch($options = []) {
 
     log_verbose("Downloading list of courses...\n");
 
-    $courses = get_courses_from_rishum($semester);
+    $courses = get_courses_from_rishum($semester, $simultaneous_downloads);
     if ($courses === false) {
         return false;
     }
@@ -50,7 +50,7 @@ function fetch($options = []) {
 
     $fetched_info = [];
     foreach ($courses as $course) {
-        $html = file_get_contents("$cache_dir/courses/$course.html");
+        $html = file_get_contents("$cache_dir/$course.html");
 
         // Replace invalid UTF-8 characters.
         // https://stackoverflow.com/a/8215387
@@ -81,7 +81,7 @@ function fetch($options = []) {
     ];
 }
 
-function get_courses_from_rishum($semester) {
+function get_courses_from_rishum($semester, $simultaneous_downloads) {
     $ch = curl_init();
 
     $session_params = get_courses_session_params($ch);
@@ -95,28 +95,43 @@ function get_courses_from_rishum($semester) {
     log_verbose("Getting list of courses from Rishum:\n");
     log_verbose("Page 1...\n");
 
-    $result = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
-    list($success, $data) = $result;
-    if (!$success) {
+    $courses = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
+    while ($courses === false) {
+        log_verbose("Re-trying...\n");
+        sleep(10);
+        $courses = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
+    }
+
+    if (count($courses) == 0) {
         return false;
     }
 
-    $courses = $data;
-
-    for ($page = 1; ; $page++) {
+    $page = 1;
+    $reached_end = false;
+    while (!$reached_end) {
         log_verbose("Page " . ($page + 1) . "...\n");
 
-        $result = get_courses_next_page($ch, $session_cookie, $page);
-        list($success, $data) = $result;
-        if (!$success) {
-            return false;
+        $result = get_courses_next_pages($ch, $session_cookie, $page, $simultaneous_downloads);
+        while ($result === false) {
+            log_verbose("Re-trying...\n");
+            sleep(10);
+
+            // Using 1 is important - in case only one course in one page
+            // is left, there will be a redirection, and it's not supported
+            // in bulk mode.
+            $result = get_courses_next_pages($ch, $session_cookie, $page, 1);
         }
 
-        if (count($data) == 0) {
-            break;
-        }
+        list($pages_processed, $reached_end, $iter_courses) = $result;
 
-        $courses = array_unique(array_merge($courses, $data));
+        if ($pages_processed > 0) {
+            assert(count($iter_courses) > 0);
+            $courses = array_unique(array_merge($courses, $iter_courses));
+            $page += $pages_processed;
+        } else {
+            assert($reached_end);
+            assert(count($iter_courses) == 0);
+        }
     }
 
     log_verbose("Got list of " . count($courses) . " courses\n");
@@ -232,16 +247,16 @@ function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
 
     $html = curl_exec($ch);
     if ($html === false) {
-        return [false, 'curl'];
+        return false;
     }
 
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     if ($code != 200) {
-        return [false, 'http'];
+        return false;
     }
 
     if (!is_valid_rishum_html($html)) {
-        return [false, 'html'];
+        return false;
     }
 
     $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
@@ -253,69 +268,92 @@ function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
 
     libxml_use_internal_errors($prev_libxml_use_internal_errors);
 
-    $courses = get_courses_from_xpath($xpath);
-    if (count($courses) == 0) {
-        return [false, 'no_courses'];
-    }
-
-    return [true, $courses];
+    return get_courses_from_xpath($xpath);
 }
 
-function get_courses_next_page($ch, $session_cookie, $page) {
-    $url = 'https://students.technion.ac.il/local/technionsearch/results?page=' . $page;
-
-    curl_reset($ch);
-    curl_setopt($ch, CURLOPT_HEADER, false);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_COOKIE, 'MoodleSessionstudentsprod=' . $session_cookie);
-
-    $location = null;
-    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($ch, $header_line) use (&$location) {
-        if (preg_match('/^Location:\s*(.+)/i', $header_line, $matches)) {
-            $location = $matches[1];
+function get_courses_next_pages($ch, $session_cookie, $page_start, $page_amount) {
+    if ($page_amount > 1) {
+        $urls = [];
+        for ($i = 0; $i < $page_amount; $i++) {
+            $urls[] = 'https://students.technion.ac.il/local/technionsearch/results?page=' . ($page_start + $i);
         }
-        return strlen($header_line); // needed by curl
-    });
 
-    $html = curl_exec($ch);
-    if ($html === false) {
-        return [false, 'curl'];
-    }
+        $results = multi_request($urls, [
+            CURLOPT_FAILONERROR => true,
+            CURLOPT_COOKIE => 'MoodleSessionstudentsprod=' . $session_cookie,
+        ]);
+    } else {
+        $url = 'https://students.technion.ac.il/local/technionsearch/results?page=' . $page_start;
 
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_reset($ch);
+        curl_setopt($ch, CURLOPT_HEADER, false);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_COOKIE, 'MoodleSessionstudentsprod=' . $session_cookie);
 
-    // Handle the case of a single result.
-    if ($code == 303 && isset($location)) {
-        $p = '#https://students\.technion\.ac\.il/local/technionsearch/course/(\d+)#';
-        if (preg_match($p, $location, $matches)) {
-            return [true, [$matches[1]]];
+        $location = null;
+        curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($ch, $header_line) use (&$location) {
+            if (preg_match('/^Location:\s*(.+)/i', $header_line, $matches)) {
+                $location = $matches[1];
+            }
+            return strlen($header_line); // needed by curl
+        });
+
+        $html = curl_exec($ch);
+        if ($html === false) {
+            return false;
         }
+
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+        // Handle the case of a single result.
+        if ($code == 303 && isset($location)) {
+            $p = '#https://students\.technion\.ac\.il/local/technionsearch/course/(\d+)#';
+            if (preg_match($p, $location, $matches)) {
+                return [1, false, $matches[1]];
+            }
+        }
+
+        if ($code != 200) {
+            return false;
+        }
+
+        $results = [$html];
     }
 
-    if ($code != 200) {
-        return [false, 'http'];
+    $pages_processed = 0;
+    $reached_end = false;
+    $courses = [];
+    foreach ($results as $html) {
+        if (!$html || !is_valid_rishum_html($html)) {
+            break;
+        }
+
+        $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
+
+        $dom = new \DOMDocument;
+        $dom->loadHTML($html);
+        libxml_clear_errors();
+        $xpath = new \DOMXPath($dom);
+
+        libxml_use_internal_errors($prev_libxml_use_internal_errors);
+
+        $iter_courses = get_courses_from_xpath($xpath);
+        if (count($iter_courses) == 0) {
+            assert(strpos($html, '<h3>לא נמצאו קורסים</h3>') !== false);
+            $reached_end = true;
+            break;
+        }
+
+        $pages_processed++;
+        $courses = array_unique(array_merge($courses, $iter_courses));
     }
 
-    if (!is_valid_rishum_html($html)) {
-        return [false, 'html'];
+    if ($pages_processed == 0 && !$reached_end) {
+        return false;
     }
 
-    $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
-
-    $dom = new \DOMDocument;
-    $dom->loadHTML($html);
-    libxml_clear_errors();
-    $xpath = new \DOMXPath($dom);
-
-    libxml_use_internal_errors($prev_libxml_use_internal_errors);
-
-    $courses = get_courses_from_xpath($xpath);
-    if (count($courses) == 0) {
-        assert(strpos($html, '<h3>לא נמצאו קורסים</h3>') !== false);
-    }
-
-    return [true, $courses];
+    return [$pages_processed, $reached_end, $courses];
 }
 
 function get_courses_from_xpath(\DOMXPath $xpath) {
@@ -333,13 +371,13 @@ function get_courses_from_xpath(\DOMXPath $xpath) {
 }
 
 function download_courses($courses, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout) {
-    if (!is_dir("$cache_dir/courses")) {
-        mkdir("$cache_dir/courses");
+    if (!is_dir($cache_dir)) {
+        mkdir($cache_dir);
     }
     $requests = array_map(function ($course) use ($cache_dir) {
         return [
             'url' => "https://students.technion.ac.il/local/technionsearch/course/$course",
-            'filename' => "$cache_dir/courses/$course.html"
+            'filename' => "$cache_dir/$course.html"
         ];
     }, $courses);
 
