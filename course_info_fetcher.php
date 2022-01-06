@@ -134,7 +134,7 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
         }
     }
 
-    log_verbose("Got list of " . count($courses) . " courses\n");
+    log_verbose("Got list of " . count($courses) . " courses from $page pages\n");
 
     sort($courses);
     return $courses;
