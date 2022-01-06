@@ -7,11 +7,14 @@ function fetch($options = []) {
 
     $cache_dir = $options['cache_dir'] ?? 'course_info_cache';
     $semester = $options['semester'] ?? null;
-    $repfile_cache_life = intval($options['repfile_cache_life'] ?? 60*60*24*365*10);
     $course_cache_life = intval($options['course_cache_life'] ?? 60*60*24*365*10);
     $simultaneous_downloads = intval($options['simultaneous_downloads'] ?? 64);
     $download_timeout = intval($options['download_timeout'] ?? 60*10);
     $course_info_fetcher_verbose = isset($options['verbose']);
+
+    if (!$semester) {
+        return false;
+    }
 
     if (!is_dir($cache_dir)) {
         mkdir($cache_dir);
@@ -19,23 +22,9 @@ function fetch($options = []) {
 
     log_verbose("Downloading list of courses...\n");
 
-    if (!isset($semester)) {
-        $repfile_filename = "$cache_dir/REPFILE.zip";
-        if (!download_repfile($repfile_filename, $repfile_cache_life)) {
-            return false;
-        }
-
-        $data = get_courses_from_repfile($repfile_filename);
-        if ($data === false) {
-            return false;
-        }
-
-        list($semester, $courses) = $data;
-    } else {
-        $courses = get_courses_from_rishum($semester);
-        if ($courses === false) {
-            return false;
-        }
+    $courses = get_courses_from_rishum($semester);
+    if ($courses === false) {
+        return false;
     }
 
     log_verbose("Downloading course data...\n");
@@ -90,125 +79,6 @@ function fetch($options = []) {
         'downloaded' => $downloaded,
         'failed' => $failed
     ];
-}
-
-function download_repfile($repfile_filename, $repfile_cache_life) {
-    if (!is_valid_zip_file($repfile_filename) ||
-        time() - filemtime($repfile_filename) > $repfile_cache_life) {
-        log_verbose("Downloading Repfile...\n");
-        $result = file_put_contents($repfile_filename,
-            fopen('http://ug3.technion.ac.il/rep/REPFILE.zip', 'r'));
-        if ($result === false) {
-            trigger_error("Cannot download repfile", E_USER_ERROR);
-            return false;
-        }
-        if (!is_valid_zip_file($repfile_filename)) {
-            trigger_error("Downloaded repfile is invalid", E_USER_ERROR);
-            return false;
-        }
-    }
-    return true;
-}
-
-function is_valid_zip_file($filename) {
-    $zip = new \ZipArchive;
-    return $zip->open($filename, \ZipArchive::CHECKCONS) === TRUE;
-}
-
-function get_courses_from_repfile($repfile_filename) {
-    $zip = new \ZipArchive;
-    $result = $zip->open($repfile_filename);
-    if ($result !== true) {
-        trigger_error("Cannot open repfile zip file", E_USER_ERROR);
-        return false;
-    }
-
-    $repfile = $zip->getFromName('REPY');
-    $repfile = iconv('IBM862', 'UTF-8', $repfile);
-
-    $courses = [];
-    $semester = false;
-    $faculties = explode("\r\n\r\n", $repfile);
-    $faculties = array_filter(array_map('trim', $faculties));
-    foreach ($faculties as $id => $faculty) {
-        $p = <<<'EOF'
-            #
-            \+=+\+\r\n
-            \|\s* (.+?) \s* - \s* תועש \s+ תכרעמ \s*\|\r\n
-            \|\s* (\S+) \s+ (\S+) \s+ רטסמס \s*\|\r\n
-            \+=+\+\r\n
-            #ux
-EOF;
-        if (preg_match($p, $faculty, $matches)) {
-            //$faculty_name = utf8_strrev($matches[1]);
-            $faculty_semester = heb_semester_to_num($matches[2], $matches[3]);
-        } else {
-            $p = <<<'EOF'
-                #
-                \+=+\+\r\n
-                \|\s* (\S+) \s+ (\S+) \s+ רטסמס \s* - \s* (טרופס \s+ תועוצקמ) \s*\|\r\n
-                \+=+\+\r\n
-                #ux
-EOF;
-            if (preg_match($p, $faculty, $matches)) {
-                //$faculty_name = utf8_strrev($matches[3]);
-                $faculty_semester = heb_semester_to_num($matches[1], $matches[2]);
-            } else {
-                assert(0);
-                //$faculty_name = strrev("unknown$id");
-                $faculty_semester = false;
-            }
-        }
-
-        assert($faculty_semester !== false);
-        if ($semester === false) {
-            $semester = $faculty_semester;
-        } else {
-            assert($semester === $faculty_semester);
-        }
-
-        $p = <<<'EOF'
-            #
-            \+-+\+\r\n
-            \|\s* .*? \s* (\d{6}) \s*\|\r\n
-            \| .*? \|\r\n
-            \+-+\+\r\n
-            #ux
-EOF;
-        preg_match_all($p, $faculty, $matches);
-
-        $courses = array_merge($courses, $matches[1]);
-    }
-
-    sort($courses);
-
-    return [$semester, $courses];
-}
-
-function heb_semester_to_num($year, $season) {
-    // TODO: implement proper conversion
-    $year_array = [
-        'ז"עשת' => '2016',
-        'ח"עשת' => '2017',
-        'ט"עשת' => '2018',
-        'ף"שת' => '2019',
-        'א"פשת' => '2020',
-        'ב"פשת' => '2021',
-        'ג"פשת' => '2022',
-        'ד"פשת' => '2023',
-        'ה"פשת' => '2024',
-        'ו"פשת' => '2025',
-        'ז"פשת' => '2026',
-        'ח"פשת' => '2027',
-        'ט"פשת' => '2028',
-    ];
-    $season_array = [
-        'ףרוח' => '01',
-        'ביבא' => '02',
-        'ץיק' => '03',
-    ];
-
-    return $year_array[$year] . $season_array[$season];
 }
 
 function get_courses_from_rishum($semester) {

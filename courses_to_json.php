@@ -12,13 +12,16 @@ require_once 'course_info_fetcher.php';
 $longopts  = [
     "cache_dir:",
     "semester:",
-    "repfile_cache_life:",
     "course_cache_life:",
     "simultaneous_downloads:",
     "download_timeout:",
     "verbose",
 ];
 $options = getopt('', $longopts);
+if (!isset($options['semester'])) {
+    echo "Semester is not specified\n";
+    exit(1);
+}
 
 $fetched = course_info_fetcher\fetch($options);
 if ($fetched === false) {
