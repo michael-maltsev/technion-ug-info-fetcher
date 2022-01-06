@@ -831,7 +831,7 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $on
     assert($schedule_node->nodeName == 'div' && $schedule_node->getAttribute('class') == 'list-group');
 
     for ($row = $schedule_node->firstChild; $row; $row = $row->nextSibling) {
-        if ($row->nodeName == '#text') {
+        if ($row->nodeName == '#text' || $row->nodeName == '#comment') {
             continue;
         }
         assert($row->nodeName == 'span' && preg_match('#(^|\s)list-group-item($|\s)#u', $row->getAttribute('class')));
@@ -857,6 +857,12 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $on
             $item['סוג'] = trim($subcolumns[0]->textContent);
             $item['יום'] = trim($subcolumns[1]->textContent);
             $item['שעה'] = trim($subcolumns[2]->textContent);
+
+            if ($item['סוג'] == 'קבוצת רישום') {
+                assert($item['יום'] == '');
+                assert($item['שעה'] == 'אין מידע אודות שעות לימוד');
+                continue;
+            }
 
             $location = $subcolumns[3]->firstChild;
             while ($location == '#text') {
