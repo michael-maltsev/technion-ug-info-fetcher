@@ -30,13 +30,13 @@ function fetch($options = []) {
     log_verbose("Downloading course data...\n");
 
     list($downloaded, $failed) = download_courses(
-        $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
+        $courses, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
 
     while ($failed > 0) {
         log_verbose("Re-trying download for $failed failed courses...\n");
         sleep(10);
         list($downloaded_new, $failed) = download_courses(
-            $courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
+            $courses, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
 
         $downloaded += $downloaded_new;
     }
@@ -50,7 +50,7 @@ function fetch($options = []) {
 
     $fetched_info = [];
     foreach ($courses as $course) {
-        $html = file_get_contents("$cache_dir/$semester/$course.html");
+        $html = file_get_contents("$cache_dir/courses/$course.html");
 
         // Replace invalid UTF-8 characters.
         // https://stackoverflow.com/a/8215387
@@ -332,15 +332,14 @@ function get_courses_from_xpath(\DOMXPath $xpath) {
     return $courses;
 }
 
-function download_courses($courses, $semester, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout) {
-    if (!is_dir("$cache_dir/$semester")) {
-        mkdir("$cache_dir/$semester");
+function download_courses($courses, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout) {
+    if (!is_dir("$cache_dir/courses")) {
+        mkdir("$cache_dir/courses");
     }
-    $requests = array_map(function ($course) use ($semester, $cache_dir) {
-        $suffix = $semester != '' ? "/$semester" : '';
+    $requests = array_map(function ($course) use ($cache_dir) {
         return [
-            'url' => "https://students.technion.ac.il/local/technionsearch/course/$course$suffix",
-            'filename' => "$cache_dir/$semester/$course.html"
+            'url' => "https://students.technion.ac.il/local/technionsearch/course/$course",
+            'filename' => "$cache_dir/courses/$course.html"
         ];
     }, $courses);
 
@@ -348,8 +347,8 @@ function download_courses($courses, $semester, $cache_dir, $course_cache_life, $
     $should_request_course = function ($request) use ($min_valid_cache_time) {
         return
             !is_file($request['filename']) ||
-            filesize($request['filename']) == 0 ||
-            filemtime($request['filename']) < $min_valid_cache_time;
+            filemtime($request['filename']) < $min_valid_cache_time ||
+            !is_valid_rishum_html(file_get_contents($request['filename']));
     };
 
     $requests = array_filter($requests, $should_request_course);
