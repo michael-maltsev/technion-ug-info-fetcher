@@ -77,7 +77,7 @@ function fetch($options = []) {
         'semester' => $semester,
         'info' => $fetched_info,
         'downloaded' => $downloaded,
-        'failed' => $failed
+        'failed' => $failed,
     ];
 }
 
@@ -111,15 +111,11 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
     while (!$reached_end) {
         log_verbose("Page " . ($page + 1) . "...\n");
 
-        $result = get_courses_next_pages($ch, $session_cookie, $page, $simultaneous_downloads);
+        $result = get_courses_next_pages($session_cookie, $page, $simultaneous_downloads);
         while ($result === false) {
             log_verbose("Re-trying...\n");
             sleep(10);
-
-            // Using 1 is important - in case only one course in one page
-            // is left, there will be a redirection, and it's not supported
-            // in bulk mode.
-            $result = get_courses_next_pages($ch, $session_cookie, $page, 1);
+            $result = get_courses_next_pages($session_cookie, $page, $simultaneous_downloads);
         }
 
         list($pages_processed, $reached_end, $iter_courses) = $result;
@@ -271,55 +267,16 @@ function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
     return get_courses_from_xpath($xpath);
 }
 
-function get_courses_next_pages($ch, $session_cookie, $page_start, $page_amount) {
-    if ($page_amount > 1) {
-        $urls = [];
-        for ($i = 0; $i < $page_amount; $i++) {
-            $urls[] = 'https://students.technion.ac.il/local/technionsearch/results?page=' . ($page_start + $i);
-        }
-
-        $results = multi_request($urls, [
-            CURLOPT_FAILONERROR => true,
-            CURLOPT_COOKIE => 'MoodleSessionstudentsprod=' . $session_cookie,
-        ]);
-    } else {
-        $url = 'https://students.technion.ac.il/local/technionsearch/results?page=' . $page_start;
-
-        curl_reset($ch);
-        curl_setopt($ch, CURLOPT_HEADER, false);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_COOKIE, 'MoodleSessionstudentsprod=' . $session_cookie);
-
-        $location = null;
-        curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($ch, $header_line) use (&$location) {
-            if (preg_match('/^Location:\s*(.+)/i', $header_line, $matches)) {
-                $location = $matches[1];
-            }
-            return strlen($header_line); // needed by curl
-        });
-
-        $html = curl_exec($ch);
-        if ($html === false) {
-            return false;
-        }
-
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-        // Handle the case of a single result.
-        if ($code == 303 && isset($location)) {
-            $p = '#https://students\.technion\.ac\.il/local/technionsearch/course/(\d+)#';
-            if (preg_match($p, $location, $matches)) {
-                return [1, false, $matches[1]];
-            }
-        }
-
-        if ($code != 200) {
-            return false;
-        }
-
-        $results = [$html];
+function get_courses_next_pages($session_cookie, $page_start, $page_amount) {
+    $urls = [];
+    for ($i = 0; $i < $page_amount; $i++) {
+        $urls[] = 'https://students.technion.ac.il/local/technionsearch/results?page=' . ($page_start + $i);
     }
+
+    $results = multi_request($urls, [
+        CURLOPT_FAILONERROR => true,
+        CURLOPT_COOKIE => 'MoodleSessionstudentsprod=' . $session_cookie,
+    ]);
 
     $pages_processed = 0;
     $reached_end = false;
@@ -329,16 +286,25 @@ function get_courses_next_pages($ch, $session_cookie, $page_start, $page_amount)
             break;
         }
 
-        $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
+        if (strpos($html, '<title>הכוון מחדש</title>') !== false) {
+            // Handle the case of a single result.
+            $p = '#<a href="https://students\.technion\.ac\.il/local/technionsearch/course/(\d+)[/"]#';
+            $matched = preg_match_all($p, $html, $matches);
+            assert($matched == 1);
+            $iter_courses = $matches[1];
+        } else {
+            $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
 
-        $dom = new \DOMDocument;
-        $dom->loadHTML($html);
-        libxml_clear_errors();
-        $xpath = new \DOMXPath($dom);
+            $dom = new \DOMDocument;
+            $dom->loadHTML($html);
+            libxml_clear_errors();
+            $xpath = new \DOMXPath($dom);
 
-        libxml_use_internal_errors($prev_libxml_use_internal_errors);
+            libxml_use_internal_errors($prev_libxml_use_internal_errors);
 
-        $iter_courses = get_courses_from_xpath($xpath);
+            $iter_courses = get_courses_from_xpath($xpath);
+        }
+
         if (count($iter_courses) == 0) {
             assert(strpos($html, '<h3>לא נמצאו קורסים</h3>') !== false);
             $reached_end = true;
@@ -377,7 +343,7 @@ function download_courses($courses, $cache_dir, $course_cache_life, $simultaneou
     $requests = array_map(function ($course) use ($cache_dir) {
         return [
             'url' => "https://students.technion.ac.il/local/technionsearch/course/$course",
-            'filename' => "$cache_dir/$course.html"
+            'filename' => "$cache_dir/$course.html",
         ];
     }, $courses);
 
@@ -459,7 +425,7 @@ function get_course_info(\DOMDocument $dom, \DOMXPath $xpath, $semester) {
 
     $info = [
         'general' => $general,
-        'schedule' => $schedule
+        'schedule' => $schedule,
     ];
     return $info;
 }
