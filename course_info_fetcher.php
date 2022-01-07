@@ -106,16 +106,18 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
         return false;
     }
 
+    $chs = [];
     $page = 1;
     $reached_end = false;
     while (!$reached_end) {
         log_verbose("Page " . ($page + 1) . "...\n");
 
-        $result = get_courses_next_pages($session_cookie, $page, $simultaneous_downloads);
+        $result = get_courses_next_pages($chs, $session_cookie, $page, $simultaneous_downloads);
         while ($result === false) {
             log_verbose("Re-trying...\n");
+            $chs = [];
             sleep(10);
-            $result = get_courses_next_pages($session_cookie, $page, $simultaneous_downloads);
+            $result = get_courses_next_pages($chs, $session_cookie, $page, $simultaneous_downloads);
         }
 
         list($pages_processed, $reached_end, $iter_courses) = $result;
@@ -267,7 +269,7 @@ function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
     return get_courses_from_xpath($xpath);
 }
 
-function get_courses_next_pages($session_cookie, $page_start, $page_amount) {
+function get_courses_next_pages($chs, $session_cookie, $page_start, $page_amount) {
     $urls = [];
     for ($i = 0; $i < $page_amount; $i++) {
         $urls[] = 'https://students.technion.ac.il/local/technionsearch/results?page=' . ($page_start + $i);
@@ -276,7 +278,7 @@ function get_courses_next_pages($session_cookie, $page_start, $page_amount) {
     $results = multi_request($urls, [
         CURLOPT_FAILONERROR => true,
         CURLOPT_COOKIE => 'MoodleSessionstudentsprod=' . $session_cookie,
-    ]);
+    ], $chs);
 
     $pages_processed = 0;
     $reached_end = false;
@@ -360,25 +362,14 @@ function download_courses($courses, $cache_dir, $course_cache_life, $simultaneou
 
     log_verbose("Downloading data of $requested_count courses:\n");
 
+    $chs = [];
     foreach (array_chunk($requests, $simultaneous_downloads) as $i => $chunk) {
-        multi_request($chunk, [CURLOPT_FAILONERROR => true, CURLOPT_TIMEOUT => $download_timeout]);
+        multi_request($chunk, [CURLOPT_FAILONERROR => true, CURLOPT_TIMEOUT => $download_timeout], $chs);
         log_verbose("Downloaded " . ($i * $simultaneous_downloads + count($chunk)) . "...\n");
     }
+    unset($chs); // causes file data to be flushed
 
-    $requests = array_filter($requests, function ($request) use ($should_request_course) {
-        if ($should_request_course($request)) {
-            return true;
-        }
-
-        $html = file_get_contents($request['filename']);
-        if (!is_valid_rishum_html($html)) {
-            file_put_contents($request['filename'], '');
-            return true;
-        }
-
-        return false;
-    });
-
+    $requests = array_filter($requests, $should_request_course);
     $failed_count = count($requests);
 
     log_verbose("Done, $failed_count of $requested_count failed\n");
@@ -852,11 +843,9 @@ function utf8_strrev($str){
 
 // https://www.phpied.com/simultaneuos-http-requests-in-php-with-curl/
 // http://php.net/manual/en/function.curl-multi-select.php#115381
-function multi_request($data, $options = array()) {
-    // array of curl handles
-    $curly = array();
+function multi_request($data, $options = [], &$curly = []) {
     // data to be returned
-    $result = array();
+    $result = [];
 
     // multi handle
     $mh = curl_multi_init();
@@ -864,7 +853,11 @@ function multi_request($data, $options = array()) {
     // loop through $data and create curl handles
     // then add them to the multi-handle
     foreach ($data as $id => $d) {
-        $curly[$id] = curl_init();
+        if (isset($curly[$id])) {
+            curl_reset($curly[$id]);
+        } else {
+            $curly[$id] = curl_init();
+        }
 
         $url = (is_array($d) && !empty($d['url'])) ? $d['url'] : $d;
         curl_setopt($curly[$id], CURLOPT_URL, $url);
@@ -911,11 +904,11 @@ function multi_request($data, $options = array()) {
     }
 
     // get content and remove handles
-    foreach ($curly as $id => $c) {
-        if (!is_array($data[$id]) || empty($data[$id]['filename'])) {
-            $result[$id] = curl_multi_getcontent($c);
+    foreach ($data as $id => $d) {
+        if (!is_array($d) || empty($d['filename'])) {
+            $result[$id] = curl_multi_getcontent($curly[$id]);
         }
-        curl_multi_remove_handle($mh, $c);
+        curl_multi_remove_handle($mh, $curly[$id]);
     }
 
     // all done
