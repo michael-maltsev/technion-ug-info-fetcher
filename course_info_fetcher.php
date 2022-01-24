@@ -61,11 +61,11 @@ function fetch($options = []) {
         libxml_clear_errors();
         $xpath = new \DOMXPath($dom);
 
-        if (!is_course_active_in_semester($xpath, $semester)) {
+        if (!is_course_active_in_semester($course, $xpath, $semester)) {
             continue;
         }
 
-        $info = get_course_info($dom, $xpath, $semester);
+        $info = get_course_info($course, $dom, $xpath, $semester);
 
         //file_put_contents($debug_filename, print_r($info, true), FILE_APPEND);
         $fetched_info[] = $info;
@@ -123,12 +123,12 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
         list($pages_processed, $reached_end, $iter_courses) = $result;
 
         if ($pages_processed > 0) {
-            assert(count($iter_courses) > 0);
+            ensure(count($iter_courses) > 0);
             $courses = array_unique(array_merge($courses, $iter_courses));
             $page += $pages_processed;
         } else {
-            assert($reached_end);
-            assert(count($iter_courses) == 0);
+            ensure($reached_end);
+            ensure(count($iter_courses) == 0);
         }
     }
 
@@ -292,7 +292,7 @@ function get_courses_next_pages($chs, $session_cookie, $page_start, $page_amount
             // Handle the case of a single result.
             $p = '#<a href="https://students\.technion\.ac\.il/local/technionsearch/course/(\d+)[/"]#';
             $matched = preg_match_all($p, $html, $matches);
-            assert($matched == 1);
+            ensure($matched == 1);
             $iter_courses = $matches[1];
         } else {
             $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
@@ -308,7 +308,7 @@ function get_courses_next_pages($chs, $session_cookie, $page_start, $page_amount
         }
 
         if (count($iter_courses) == 0) {
-            assert(strpos($html, '<h3>לא נמצאו קורסים</h3>') !== false);
+            ensure(strpos($html, '<h3>לא נמצאו קורסים</h3>') !== false);
             $reached_end = true;
             break;
         }
@@ -389,16 +389,16 @@ function is_valid_rishum_html($html) {
     return true;
 }
 
-function is_course_active_in_semester(\DOMXPath $xpath, $semester) {
+function is_course_active_in_semester($course, \DOMXPath $xpath, $semester) {
     $semester_data = $xpath->query("//div[@id='s_$semester']");
     $semester_data = iterator_to_array($semester_data);
     return count($semester_data) > 0;
 }
 
-function get_course_info(\DOMDocument $dom, \DOMXPath $xpath, $semester) {
+function get_course_info($course, \DOMDocument $dom, \DOMXPath $xpath, $semester) {
     $general = array_merge(
-        get_course_general_info($dom, $xpath),
-        get_course_semester_info($dom, $xpath, $semester)
+        get_course_general_info($course, $dom, $xpath),
+        get_course_semester_info($course, $dom, $xpath, $semester)
     );
 
     $only_lectures = true;
@@ -412,7 +412,7 @@ function get_course_info(\DOMDocument $dom, \DOMXPath $xpath, $semester) {
             break;
         }
     }
-    $schedule = get_course_schedule($dom, $xpath, $semester, $only_lectures);
+    $schedule = get_course_schedule($course, $dom, $xpath, $semester, $only_lectures);
 
     $info = [
         'general' => $general,
@@ -421,24 +421,25 @@ function get_course_info(\DOMDocument $dom, \DOMXPath $xpath, $semester) {
     return $info;
 }
 
-function get_course_general_info(\DOMDocument $dom, \DOMXPath $xpath) {
+function get_course_general_info($course, \DOMDocument $dom, \DOMXPath $xpath) {
     $info = [];
 
     $class_rule = xpath_class_rule('page-header-headings');
     $page_header = $xpath->query("//div[$class_rule]/h1");
     $page_header = iterator_to_array($page_header);
-    assert(count($page_header) == 1);
+    ensure(count($page_header) == 1);
     $page_header = $page_header[0];
     $page_header = trim($page_header->textContent);
     $matched = preg_match('#^(.*?)\s*-\s*(.*)$#u', $page_header, $matches);
-    assert($matched);
-    $info['מספר מקצוע'] = str_pad($matches[1], 6, '0', STR_PAD_LEFT);
+    ensure($matched);
+    ensure($course == str_pad($matches[1], 6, '0', STR_PAD_LEFT));
+    $info['מספר מקצוע'] = $course;
     $info['שם מקצוע'] = $matches[2];
 
     $class_rule = xpath_class_rule('card-text');
     $card_text = $xpath->query("//div[@id='general_information']/p[$class_rule][position()=1]");
     $card_text = iterator_to_array($card_text);
-    assert(count($card_text) == 1);
+    ensure(count($card_text) == 1);
     $card_text = $card_text[0];
     $card_text = trim($card_text->textContent);
     $card_text = preg_replace_callback('#\s+#u', function ($matches) {
@@ -449,11 +450,11 @@ function get_course_general_info(\DOMDocument $dom, \DOMXPath $xpath) {
     $class_rule = xpath_class_rule('card-subtitle');
     $card_subtitle = $xpath->query("//div[@id='general_information']/h6[$class_rule]");
     $card_subtitle = iterator_to_array($card_subtitle);
-    assert(count($card_subtitle) == 1);
+    ensure(count($card_subtitle) == 1);
     $card_subtitle = $card_subtitle[0];
     $card_subtitle = trim(DOMinnerHTML($card_subtitle));
     $matched = preg_match('#^פקולטה:\s*(.*?)\s*<br[^>]*>([\s\S]*)$#u', $card_subtitle, $matches);
-    assert($matched);
+    ensure($matched);
     $info['פקולטה'] = $matches[1];
     $degrees = trim($matches[2]);
     if ($degrees != '') {
@@ -461,7 +462,7 @@ function get_course_general_info(\DOMDocument $dom, \DOMXPath $xpath) {
         $degrees_text = [];
         foreach ($degrees as $degree) {
             $text = trim($degree);
-            assert(str_starts_with($text, '|'));
+            ensure(str_starts_with($text, '|'));
             $text = substr($text, strlen('|'));
             $degrees_text[] = trim($text);
         }
@@ -473,7 +474,7 @@ function get_course_general_info(\DOMDocument $dom, \DOMXPath $xpath) {
     $card_title = iterator_to_array($card_title);
     $card_title = array_map(function ($node) {
         $text = trim($node->textContent);
-        assert(in_array($text, [
+        ensure(in_array($text, [
             // 'מקצועות זהים',
             'מקצועות ללא זיכוי נוסף',
             // 'מקצועות ללא זיכוי נוסף (מוכלים)',
@@ -501,7 +502,7 @@ function get_course_general_info(\DOMDocument $dom, \DOMXPath $xpath) {
             }
 
             $course = str_pad($course, 6, '0', STR_PAD_LEFT);
-            assert(preg_match('#^\d{6}$#u', $course));
+            ensure(preg_match('#^\d{6}$#u', $course));
 
             $text .= $course;
         }
@@ -509,14 +510,14 @@ function get_course_general_info(\DOMDocument $dom, \DOMXPath $xpath) {
         $text = preg_replace('#\s+#u', ' ', trim($text));
         return $text;
     }, $card_text);
-    assert(count($card_title) == count($card_text));
+    ensure(count($card_title) == count($card_text));
 
     $info = array_merge($info, array_combine($card_title, $card_text));
 
     return $info;
 }
 
-function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester) {
+function get_course_semester_info($course, \DOMDocument $dom, \DOMXPath $xpath, $semester) {
     $info = [];
 
     $class_rule = xpath_class_rule('card-title');
@@ -532,7 +533,7 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
             continue;
         }
 
-        assert(in_array($text, [
+        ensure(in_array($text, [
             'שעות שבועיות',
             'אחראים',
             'הערות',
@@ -546,7 +547,7 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
     do {
         $hours = $hours->nextSibling;
     } while ($hours->nodeName == '#text');
-    assert($hours->nodeName == 'p' && $hours->getAttribute('class') == 'card-text');
+    ensure($hours->nodeName == 'p' && $hours->getAttribute('class') == 'card-text');
     $hours = trim($hours->textContent);
     $hours = preg_split('#\s*•\s*#u', $hours);
     foreach ($hours as $item) {
@@ -567,8 +568,8 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
                 break;
             }
         }
-        assert(isset($info_key, $info_value));
-        assert(preg_match('#^\d+(\.5)?$#u', $info_value));
+        ensure(isset($info_key, $info_value));
+        ensure(preg_match('#^\d+(\.5)?$#u', $info_value));
         $info[$info_key] = $info_value;
     }
 
@@ -577,7 +578,7 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
         do {
             $staff = $staff->nextSibling;
         } while ($staff->nodeName == '#text');
-        assert($staff->nodeName == 'p' && $staff->getAttribute('class') == 'card-text');
+        ensure($staff->nodeName == 'p' && $staff->getAttribute('class') == 'card-text');
         $staff = trim($staff->textContent);
         $info['אחראים'] = $staff;
     }
@@ -587,13 +588,13 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
         do {
             $notes = $notes->nextSibling;
         } while ($notes->nodeName == '#text');
-        assert($notes->nodeName == 'ul');
+        ensure($notes->nodeName == 'ul');
         $note_text = [];
         for ($note = $notes->firstChild; $note; $note = $note->nextSibling) {
             if ($note->nodeName == '#text') {
                 continue;
             }
-            assert($note->nodeName == 'li');
+            ensure($note->nodeName == 'li');
             $note_text[] = trim($note->textContent);
         }
         $note_text = implode("\n====================\n", $note_text);
@@ -609,7 +610,7 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
                 $exam = $exam->nextSibling;
             }
             while (!in_array($exam->nodeName, ['br', 'h5'])) {
-                assert($exam->nodeName == 'span');
+                ensure($exam->nodeName == 'span');
                 $text = trim($exam->textContent);
                 do {
                     $exam = $exam->nextSibling;
@@ -620,7 +621,7 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
                         if ($li->nodeName == '#text') {
                             continue;
                         }
-                        assert($li->nodeName == 'li');
+                        ensure($li->nodeName == 'li');
                         $text .= "\n" . trim($li->textContent);
                     };
 
@@ -631,7 +632,7 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
 
                 $p = '#^(מועד [א-ת])(?: \((.*?)\))?: #u';
                 $matched = preg_match($p, $text, $matches);
-                assert($matched);
+                ensure($matched);
                 $info_key = $matches[1];
                 $text = preg_replace($p, '', $text);
                 if (isset($matches[2])) {
@@ -639,7 +640,7 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
                 }
 
                 if ($exam_type == 'בחנים') {
-                    assert(in_array($info_key, [
+                    ensure(in_array($info_key, [
                         'מועד א',
                         'מועד ב',
                         'מועד ג',
@@ -648,7 +649,7 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
                     ]));
                     $info_key = 'בוחן ' . $info_key;
                 } else {
-                    assert(in_array($info_key, [
+                    ensure(in_array($info_key, [
                         'מועד א',
                         'מועד ב',
                     ]));
@@ -666,7 +667,7 @@ function get_course_semester_info(\DOMDocument $dom, \DOMXPath $xpath, $semester
     return $info;
 }
 
-function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $only_lectures) {
+function get_course_schedule($course, \DOMDocument $dom, \DOMXPath $xpath, $semester, $only_lectures) {
     $class_rule = xpath_class_rule('card-title');
     $card_title = $xpath->query("//div[@id='s_$semester']/h5[$class_rule]");
     $card_title = iterator_to_array($card_title);
@@ -675,14 +676,14 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $on
     foreach ($card_title as $node) {
         $text = trim($node->textContent);
         if ($text == 'קבוצות רישום') {
-            assert(!$empty_schedule_node);
+            ensure(!$empty_schedule_node);
             $schedule_node = $node;
         } else if ($text == 'אין קבוצות רישום') {
-            assert(!$schedule_node);
+            ensure(!$schedule_node);
             $empty_schedule_node = true;
         }
     }
-    assert($schedule_node || $empty_schedule_node);
+    ensure($schedule_node || $empty_schedule_node);
     if ($empty_schedule_node) {
         return [];
     }
@@ -692,23 +693,23 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $on
     do {
         $schedule_node = $schedule_node->nextSibling;
     } while ($schedule_node->nodeName == '#text');
-    assert($schedule_node->nodeName == 'div' && $schedule_node->getAttribute('class') == 'list-group');
+    ensure($schedule_node->nodeName == 'div' && $schedule_node->getAttribute('class') == 'list-group');
 
     for ($row = $schedule_node->firstChild; $row; $row = $row->nextSibling) {
         if ($row->nodeName == '#text' || $row->nodeName == '#comment') {
             continue;
         }
-        assert($row->nodeName == 'span' && preg_match('#(^|\s)list-group-item($|\s)#u', $row->getAttribute('class')));
+        ensure($row->nodeName == 'span' && preg_match('#(^|\s)list-group-item($|\s)#u', $row->getAttribute('class')));
 
         $group = $xpath->query(".//td[@style='width: 15%;']//span[@style='font-size: 250%;']", $row);
         $group = iterator_to_array($group);
-        assert(count($group) == 1);
+        ensure(count($group) == 1);
         $group = $group[0];
         $group = trim($group->textContent);
 
         $subrows = $xpath->query(".//td[@style='width: 85%;']//tr", $row);
         $subrows = iterator_to_array($subrows);
-        assert(count($subrows) > 0);
+        ensure(count($subrows) > 0);
         foreach ($subrows as $subrow) {
             $item = [
                 'קבוצה' => $group,
@@ -716,15 +717,15 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $on
 
             $subcolumns = $xpath->query(".//td", $subrow);
             $subcolumns = iterator_to_array($subcolumns);
-            assert(count($subcolumns) == 6);
+            ensure(count($subcolumns) == 6);
 
             $item['סוג'] = trim($subcolumns[0]->textContent);
             $item['יום'] = trim($subcolumns[1]->textContent);
             $item['שעה'] = trim($subcolumns[2]->textContent);
 
             if ($item['סוג'] == 'קבוצת רישום') {
-                assert($item['יום'] == '');
-                assert($item['שעה'] == 'אין מידע אודות שעות לימוד');
+                ensure($item['יום'] == '');
+                ensure($item['שעה'] == 'אין מידע אודות שעות לימוד');
                 continue;
             }
 
@@ -732,14 +733,14 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $on
             while ($location == '#text') {
                 $location = $location->nextSibling;
             }
-            assert($location->nodeName == 'span');
+            ensure($location->nodeName == 'span');
             $item['בניין'] = trim($location->textContent);
 
             $location = $location->nextSibling;
             if ($location) {
-                assert($location->nodeName == '#text');
+                ensure($location->nodeName == '#text');
                 $item['חדר'] = trim($location->textContent);
-                assert(!$location->nextSibling);
+                ensure(!$location->nextSibling);
             } else {
                 $item['חדר'] = '';
             }
@@ -749,9 +750,9 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $on
                 if ($staff->nodeName == '#text') {
                     continue;
                 }
-                assert($staff->nodeName == 'span');
+                ensure($staff->nodeName == 'span');
                 $text = trim($staff->textContent);
-                assert(str_starts_with($text, '| '));
+                ensure(str_starts_with($text, '| '));
                 $text = substr($text, strlen('| '));
                 $staff_text[] = trim($text);
             }
@@ -765,7 +766,7 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $on
     $lectures = [];
     foreach ($schedule as &$item) {
         $group = $item['קבוצה'];
-        assert($item['סוג'] == 'הרצאה' || !$only_lectures);
+        ensure($item['סוג'] == 'הרצאה' || !$only_lectures);
         if ($item['סוג'] == 'הרצאה' && !$only_lectures) {
             $id = substr($group, 0, -1) . '0';
             $item['מס.'] = $id;
@@ -800,7 +801,7 @@ function get_course_schedule(\DOMDocument $dom, \DOMXPath $xpath, $semester, $on
             if (!$found_item) {
                 $lectures[] = $item;
             } else {
-                assert($found_match);
+                ensure($found_match);
             }
         } else {
             $item['מס.'] = $group;
@@ -836,9 +837,15 @@ function DOMinnerHTML(\DOMNode $element) {
 }
 
 // https://stackoverflow.com/a/17496494
-function utf8_strrev($str){
+function utf8_strrev($str) {
     preg_match_all('/./us', $str, $ar);
     return join('', array_reverse($ar[0]));
+}
+
+function ensure($check, $description = '') {
+    if (!$check) {
+        throw new \Exception($description);
+    }
 }
 
 // https://www.phpied.com/simultaneuos-http-requests-in-php-with-curl/
