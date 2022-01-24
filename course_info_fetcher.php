@@ -850,9 +850,11 @@ function utf8_strrev($str) {
     return join('', array_reverse($ar[0]));
 }
 
-function ensure($check, $description = '') {
+function ensure($check, $message = '') {
     if (!$check) {
-        throw new \Exception($description);
+        $bt = debug_backtrace();
+        $caller = array_shift($bt);
+        throw new \ErrorException($message, 0, E_ERROR, $caller['file'], $caller['line']);
     }
 }
 

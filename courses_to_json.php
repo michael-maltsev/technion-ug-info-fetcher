@@ -1,11 +1,17 @@
 <?php
 
-set_error_handler(
-    function($severity, $message, $file, $line) {
-        //xdebug_break();
-        throw new ErrorException($message, $severity, $severity, $file, $line);
-    }
-);
+// Print errors only once: https://stackoverflow.com/a/9002669
+ini_set('log_errors', 1);
+ini_set('display_errors', 0);
+
+// Include argument values.
+ini_set('zend.exception_ignore_args', 0);
+
+// set_error_handler(
+//     function($severity, $message, $file, $line) {
+//         xdebug_break();
+//     }
+// );
 
 require_once 'course_info_fetcher.php';
 
