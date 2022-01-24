@@ -630,6 +630,14 @@ function get_course_semester_info($course, \DOMDocument $dom, \DOMXPath $xpath, 
                     } while ($exam->nodeName == '#text');
                 }
 
+                // Skip unsupported entries.
+                // An example spotted in the wild:
+                // Semester 202101, course 014505, entry:
+                // [[session_32]]: 03-03-2022 13:00 - 16:00
+                if (preg_match('#\[\[session_\d+]\]\: #', $text)) {
+                    continue;
+                }
+
                 $p = '#^(מועד [א-ת])(?: \((.*?)\))?: #u';
                 $matched = preg_match($p, $text, $matches);
                 ensure($matched);
