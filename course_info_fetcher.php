@@ -634,7 +634,7 @@ function get_course_semester_info($course, \DOMDocument $dom, \DOMXPath $xpath, 
                 // An example spotted in the wild:
                 // Semester 202101, course 014505, entry:
                 // [[session_32]]: 03-03-2022 13:00 - 16:00
-                if (preg_match('#\[\[session_\d+]\]\: #', $text)) {
+                if (preg_match('#\[\[session_\d+]\]\: #u', $text)) {
                     continue;
                 }
 
@@ -660,6 +660,7 @@ function get_course_semester_info($course, \DOMDocument $dom, \DOMXPath $xpath, 
                     ensure(in_array($info_key, [
                         'מועד א',
                         'מועד ב',
+                        'מועד ג',
                     ]));
                 }
 
