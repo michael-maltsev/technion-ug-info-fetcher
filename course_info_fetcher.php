@@ -527,6 +527,7 @@ function get_course_semester_info($course, \DOMDocument $dom, \DOMXPath $xpath, 
     foreach ($card_title as $node) {
         $text = trim($node->textContent);
         if (in_array($text, [
+            'ניווט לדף הקורס',
             'קבוצות רישום',
             'אין קבוצות רישום',
         ])) {
