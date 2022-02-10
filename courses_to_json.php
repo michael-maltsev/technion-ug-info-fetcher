@@ -1,11 +1,12 @@
 <?php
 
 // Print errors only once: https://stackoverflow.com/a/9002669
-ini_set('log_errors', 1);
-ini_set('display_errors', 0);
+ini_set('log_errors', 'On');
+ini_set('display_errors', 'Off');
 
 // Include argument values.
-ini_set('zend.exception_ignore_args', 0);
+ini_set('zend.exception_ignore_args', 'Off');
+ini_set('zend.exception_string_param_max_len', '15');
 
 // set_error_handler(
 //     function($severity, $message, $file, $line) {
