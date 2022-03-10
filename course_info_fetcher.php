@@ -308,7 +308,7 @@ function get_courses_next_pages($chs, $session_cookie, $page_start, $page_amount
         }
 
         if (count($iter_courses) == 0) {
-            ensure(strpos($html, '<h3>לא נמצאו קורסים</h3>') !== false);
+            ensure(strpos($html, '<h3>לא נמצאו מקצועות</h3>') !== false);
             $reached_end = true;
             break;
         }
