@@ -477,7 +477,7 @@ function get_course_general_info($course, \DOMDocument $dom, \DOMXPath $xpath) {
         ensure(in_array($text, [
             // 'מקצועות זהים',
             'מקצועות ללא זיכוי נוסף',
-            // 'מקצועות ללא זיכוי נוסף (מוכלים)',
+            'מקצועות ללא זיכוי נוסף (מוכלים)',
             'מקצועות ללא זיכוי נוסף (מכילים)',
             'מקצועות צמודים',
             'מקצועות קדם',
@@ -527,7 +527,7 @@ function get_course_semester_info($course, \DOMDocument $dom, \DOMXPath $xpath, 
     foreach ($card_title as $node) {
         $text = trim($node->textContent);
         if (in_array($text, [
-            'ניווט לדף הקורס',
+            'ניווט לדף המקצוע',
             'קבוצות רישום',
             'אין קבוצות רישום',
         ])) {
