@@ -146,6 +146,11 @@ function get_courses_session_params($ch) {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_URL, $url);
 
+    $session_cookie = getenv('MOODLE_SESSIONSTUDENTSPROD', true);
+    if ($session_cookie) {
+        curl_setopt($ch, CURLOPT_COOKIE, 'MoodleSessionstudentsprod=' . $session_cookie);
+    }
+
     // https://stackoverflow.com/a/25098798
     $cookies = [];
     curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($ch, $header_line) use (&$cookies) {
@@ -160,11 +165,13 @@ function get_courses_session_params($ch) {
         return false;
     }
 
-    if (!isset($cookies['MoodleSessionstudentsprod'])) {
-        return false;
-    }
+    if (!$session_cookie) {
+        if (!isset($cookies['MoodleSessionstudentsprod'])) {
+            return false;
+        }
 
-    $session_cookie = $cookies['MoodleSessionstudentsprod'];
+        $session_cookie = $cookies['MoodleSessionstudentsprod'];
+    }
 
     $p = '#\nM\.cfg = {"wwwroot":"https:\\\\/\\\\/students\.technion\.ac\.il","sesskey":"([0-9a-zA-Z]+)"#u';
     if (!preg_match($p, $html, $matches)) {
