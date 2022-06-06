@@ -95,12 +95,15 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
     log_verbose("Getting list of courses from Rishum:\n");
     log_verbose("Page 1...\n");
 
-    $courses = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
-    while ($courses === false) {
+    $result = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
+    while ($result === false) {
         log_verbose("Re-trying...\n");
         sleep(10);
-        $courses = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
+        $result = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
     }
+
+    $courses = $result['courses'];
+    $num_pages = $result['num_pages'];
 
     if (count($courses) == 0) {
         return false;
@@ -131,6 +134,8 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
             ensure(count($iter_courses) == 0);
         }
     }
+
+    ensure($page == $num_pages);
 
     log_verbose("Got list of " . count($courses) . " courses from $page pages\n");
 
@@ -187,43 +192,54 @@ function get_courses_session_params($ch) {
 }
 
 function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
-    $url = 'https://students.technion.ac.il/local/technionsearch/results';
+    $url = 'https://students.technion.ac.il/local/technionsearch/search';
 
-    $post_fields = 'sesskey=' . $sesskey
-        . '&_qf__local_technionsearch_form_search=1'
+    ensure(preg_match('/^\d{4}0[1-3]$/', $semester));
+
+    function semester_prev($semester) {
+        $year = intval(substr($semester, 0, 4));
+        $season = intval(substr($semester, 4));
+        $season--;
+        if ($season == 0) {
+            $year--;
+            $season = 3;
+        }
+
+        return "{$year}0{$season}";
+    }
+
+    function semester_next($semester) {
+        $year = intval(substr($semester, 0, 4));
+        $season = intval(substr($semester, 4));
+        $season++;
+        if ($season == 4) {
+            $year++;
+            $season = 1;
+        }
+
+        return "{$year}0{$season}";
+    }
+
+    $semester_before_1 = semester_prev($semester);
+    $semester_before_2 = semester_prev($semester_before_1);
+    $semester_before_3 = semester_prev($semester_before_2);
+    $semester_after_1 = semester_next($semester);
+    $semester_after_2 = semester_next($semester_after_1);
+    $semester_after_3 = semester_next($semester_after_2);
+
+    $post_fields = 'mform_isexpanded_id_advance_filters=0'
+        . '&sesskey=' . $sesskey
+        . '&_qf__local_technionsearch_form_search_advance=1'
         . '&course_name='
-        . '&academic_framework=_qf__force_multiselect_submission'
-        . '&academic_framework%5B%5D=1'
-        . '&academic_framework%5B%5D=2'
-        . '&min_points=0.0'
-        . '&max_points=99.0'
+        . '&semesterscheckboxgroup%5B' . $semester_before_1 . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester_before_2 . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester_before_3 . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester . '%5D=1'
+        . '&semesterscheckboxgroup%5B' . $semester_after_1 . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester_after_2 . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester_after_3 . '%5D=0'
         . '&faculties=_qf__force_multiselect_submission'
-        . '&faculties%5B%5D=510'
-        . '&faculties%5B%5D=20'
-        . '&faculties%5B%5D=13'
-        . '&faculties%5B%5D=1'
-        . '&faculties%5B%5D=33'
-        . '&faculties%5B%5D=520'
-        . '&faculties%5B%5D=5'
-        . '&faculties%5B%5D=8'
-        . '&faculties%5B%5D=6'
-        . '&faculties%5B%5D=4'
-        . '&faculties%5B%5D=3'
-        . '&faculties%5B%5D=85'
-        . '&faculties%5B%5D=9'
-        . '&faculties%5B%5D=21'
-        . '&faculties%5B%5D=12'
-        . '&faculties%5B%5D=32'
-        . '&faculties%5B%5D=31'
-        . '&faculties%5B%5D=610'
-        . '&faculties%5B%5D=23'
-        . '&faculties%5B%5D=970'
-        . '&faculties%5B%5D=511'
-        . '&faculties%5B%5D=10'
-        . '&faculties%5B%5D=64'
-        . '&faculties%5B%5D=11'
-        . '&faculties%5B%5D=27'
-        . '&lecturer_name='
+        . '&lecturer_name=_qf__force_multiselect_submission'
         . '&daycheckboxgroup%5Bsunday%5D=0'
         . '&daycheckboxgroup%5Bsunday%5D=1'
         . '&daycheckboxgroup%5Bmonday%5D=0'
@@ -236,10 +252,17 @@ function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
         . '&daycheckboxgroup%5Bthursday%5D=1'
         . '&daycheckboxgroup%5Bfriday%5D=0'
         . '&daycheckboxgroup%5Bfriday%5D=1'
-        . '&fromtime=0.00'
-        . '&totime=24.00'
-        . '&semesters=_qf__force_multiselect_submission'
-        . '&semesters%5B%5D=' . $semester
+        . '&hours_group_filter%5Bfromtime%5D=7.00'
+        . '&hours_group_filter%5Btotime%5D=23.30'
+        . '&credit_group_filter%5Bmin_points%5D=0.0'
+        . '&credit_group_filter%5Bmax_points%5D=20.0'
+        . '&academic_level_group%5B1%5D=0'
+        . '&academic_level_group%5B1%5D=1'
+        . '&academic_level_group%5B2%5D=0'
+        . '&academic_level_group%5B2%5D=1'
+        . '&academic_level_group%5B3%5D=0'
+        . '&academic_level_group%5B3%5D=1'
+        . '&has_english_lessons=0'
         . '&submitbutton=%D7%97%D7%99%D7%A4%D7%95%D7%A9';
 
     curl_reset($ch);
@@ -273,13 +296,16 @@ function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
 
     libxml_use_internal_errors($prev_libxml_use_internal_errors);
 
-    return get_courses_from_xpath($xpath);
+    return [
+        'courses' => get_courses_from_xpath($xpath),
+        'num_pages' => get_num_pages_from_xpath($xpath),
+    ];
 }
 
 function get_courses_next_pages($chs, $session_cookie, $page_start, $page_amount) {
     $urls = [];
     for ($i = 0; $i < $page_amount; $i++) {
-        $urls[] = 'https://students.technion.ac.il/local/technionsearch/results?page=' . ($page_start + $i);
+        $urls[] = 'https://students.technion.ac.il/local/technionsearch/search?page=' . ($page_start + $i);
     }
 
     $results = multi_request($urls, [
@@ -295,27 +321,19 @@ function get_courses_next_pages($chs, $session_cookie, $page_start, $page_amount
             break;
         }
 
-        if (strpos($html, '<title>הכוון מחדש</title>') !== false) {
-            // Handle the case of a single result.
-            $p = '#<a href="https://students\.technion\.ac\.il/local/technionsearch/course/(\d+)[/"]#';
-            $matched = preg_match_all($p, $html, $matches);
-            ensure($matched == 1);
-            $iter_courses = $matches[1];
-        } else {
-            $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
+        $prev_libxml_use_internal_errors = libxml_use_internal_errors(true);
 
-            $dom = new \DOMDocument;
-            $dom->loadHTML($html);
-            libxml_clear_errors();
-            $xpath = new \DOMXPath($dom);
+        $dom = new \DOMDocument;
+        $dom->loadHTML($html);
+        libxml_clear_errors();
+        $xpath = new \DOMXPath($dom);
 
-            libxml_use_internal_errors($prev_libxml_use_internal_errors);
+        libxml_use_internal_errors($prev_libxml_use_internal_errors);
 
-            $iter_courses = get_courses_from_xpath($xpath);
-        }
+        $iter_courses = get_courses_from_xpath($xpath);
 
         if (count($iter_courses) == 0) {
-            ensure(strpos($html, '<h3>לא נמצאו מקצועות</h3>') !== false);
+            ensure(strpos($html, '<h2>אין כלום להציג</h2>') !== false);
             $reached_end = true;
             break;
         }
@@ -332,17 +350,32 @@ function get_courses_next_pages($chs, $session_cookie, $page_start, $page_amount
 }
 
 function get_courses_from_xpath(\DOMXPath $xpath) {
-    $class_rule = xpath_class_rule('list-group-item');
-    $courses = $xpath->query("//section[@id='region-main']//a[$class_rule]");
+    $starts_with_rule = "starts-with(@id, 'courses_results-table_r')";
+    $ends_with_rule = xpath_ends_with_rule('id', '_c1');
+    $courses = $xpath->query("//section[@id='region-main']//td[$starts_with_rule and $ends_with_rule]/a");
     $courses = iterator_to_array($courses);
     $courses = array_map(function ($node) {
         $href = $node->getAttribute('href');
-        $course = explode('/', $href, 3)[1];
-        $course = str_pad($course, 6, '0', STR_PAD_LEFT);
-        return $course;
+        $matched = preg_match('#/course/(\d+)$#u', $href, $matches);
+        ensure($matched);
+        ensure(preg_match('/^\d+$/u', $matches[1]));
+        return str_pad($matches[1], 6, '0', STR_PAD_LEFT);
     }, $courses);
 
     return $courses;
+}
+
+function get_num_pages_from_xpath(\DOMXPath $xpath) {
+    $class_rule = xpath_class_rule('pagination');
+    $items = $xpath->query("//section[@id='region-main']//nav[$class_rule]//li[@data-page-number]");
+    $items = iterator_to_array($items);
+    $items = array_map(function ($node) {
+        $data_page_number = $node->getAttribute('data-page-number');
+        ensure(preg_match('/^\d+$/u', $data_page_number));
+        return intval($data_page_number);
+    }, $items);
+
+    return count($items) > 0 ? max($items) : 1;
 }
 
 function download_courses($courses, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout) {
@@ -361,7 +394,7 @@ function download_courses($courses, $cache_dir, $course_cache_life, $simultaneou
         return
             !is_file($request['filename']) ||
             filemtime($request['filename']) < $min_valid_cache_time ||
-            !is_valid_rishum_html(file_get_contents($request['filename']));
+            !is_valid_rishum_course_html(file_get_contents($request['filename']));
     };
 
     $requests = array_filter($requests, $should_request_course);
@@ -389,7 +422,20 @@ function is_valid_rishum_html($html) {
         return false;
     }
 
-    if (strpos($html, 'Warning: mysqli') !== false) {
+    if (strpos($html, 'generalexceptionmessage') !== false) {
+        return false;
+    }
+
+    return true;
+}
+
+function is_valid_rishum_course_html($html) {
+    if (!is_valid_rishum_html($html)) {
+        return false;
+    }
+
+    $p = '#<meta\s+property="page_url"\s+name="page_url"\s+content="https://students\.technion\.ac\.il/local/technionsearch/course/\d+/\d+"\s+/>#';
+    if (!preg_match($p, $html)) {
         return false;
     }
 
@@ -839,6 +885,11 @@ function log_verbose($msg) {
 
 function xpath_class_rule($class) {
     return "contains(concat(' ', normalize-space(@class), ' '), ' $class ')";
+}
+
+// https://stackoverflow.com/a/40935676
+function xpath_ends_with_rule($tagname, $str) {
+    return "substring(@$tagname, string-length(@$tagname) - string-length('$str') + 1) = '$str'";
 }
 
 // https://stackoverflow.com/a/2087136
