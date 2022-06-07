@@ -194,50 +194,34 @@ function get_courses_session_params($ch) {
 function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
     $url = 'https://students.technion.ac.il/local/technionsearch/search';
 
-    ensure(preg_match('/^\d{4}0[1-3]$/', $semester));
-
-    function semester_prev($semester) {
+    $semester_add = function ($semester, $add) {
+        ensure(preg_match('/^\d{4}0[1-3]$/', $semester));
         $year = intval(substr($semester, 0, 4));
         $season = intval(substr($semester, 4));
-        $season--;
-        if ($season == 0) {
+        $season += $add;
+        while ($season < 1) {
             $year--;
-            $season = 3;
+            $season += 3;
         }
-
-        return "{$year}0{$season}";
-    }
-
-    function semester_next($semester) {
-        $year = intval(substr($semester, 0, 4));
-        $season = intval(substr($semester, 4));
-        $season++;
-        if ($season == 4) {
+        while ($season > 3) {
             $year++;
-            $season = 1;
+            $season -= 3;
         }
 
         return "{$year}0{$season}";
-    }
-
-    $semester_before_1 = semester_prev($semester);
-    $semester_before_2 = semester_prev($semester_before_1);
-    $semester_before_3 = semester_prev($semester_before_2);
-    $semester_after_1 = semester_next($semester);
-    $semester_after_2 = semester_next($semester_after_1);
-    $semester_after_3 = semester_next($semester_after_2);
+    };
 
     $post_fields = 'mform_isexpanded_id_advance_filters=0'
         . '&sesskey=' . $sesskey
         . '&_qf__local_technionsearch_form_search_advance=1'
         . '&course_name='
-        . '&semesterscheckboxgroup%5B' . $semester_before_1 . '%5D=0'
-        . '&semesterscheckboxgroup%5B' . $semester_before_2 . '%5D=0'
-        . '&semesterscheckboxgroup%5B' . $semester_before_3 . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester_add($semester, -3) . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester_add($semester, -2) . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester_add($semester, -1) . '%5D=0'
         . '&semesterscheckboxgroup%5B' . $semester . '%5D=1'
-        . '&semesterscheckboxgroup%5B' . $semester_after_1 . '%5D=0'
-        . '&semesterscheckboxgroup%5B' . $semester_after_2 . '%5D=0'
-        . '&semesterscheckboxgroup%5B' . $semester_after_3 . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester_add($semester, 1) . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester_add($semester, 2) . '%5D=0'
+        . '&semesterscheckboxgroup%5B' . $semester_add($semester, 3) . '%5D=0'
         . '&faculties=_qf__force_multiselect_submission'
         . '&lecturer_name=_qf__force_multiselect_submission'
         . '&daycheckboxgroup%5Bsunday%5D=0'
