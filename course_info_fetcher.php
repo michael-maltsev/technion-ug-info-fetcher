@@ -77,7 +77,6 @@ function fetch($options = []) {
         'semester' => $semester,
         'info' => $fetched_info,
         'downloaded' => $downloaded,
-        'failed' => $failed,
     ];
 }
 

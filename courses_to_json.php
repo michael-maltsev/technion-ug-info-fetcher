@@ -42,15 +42,10 @@ if (count($fetched['info']) == 0) {
 }
 
 echo "Downloaded {$fetched['downloaded']} courses to cache\n";
-$has_failed = $fetched['failed'] > 0;
-if ($has_failed) {
-    echo "WARNING: failed to download {$fetched['failed']} courses\n";
-    echo "You might want to run the script again\n";
-}
 
 $filename = "courses_{$fetched['semester']}.json";
 echo "Writing result to '$filename'\n";
 file_put_contents($filename, json_encode($fetched['info'], JSON_UNESCAPED_UNICODE));
 
 echo "Done!\n";
-exit($has_failed ? 1 : 0);
+exit(0);
