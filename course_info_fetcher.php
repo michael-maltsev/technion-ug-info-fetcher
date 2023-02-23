@@ -146,6 +146,7 @@ function get_courses_session_params($ch) {
     $url = 'https://students.technion.ac.il/local/technionsearch/search';
 
     curl_reset($ch);
+    curl_setopt_array($ch, default_curl_options());
     curl_setopt($ch, CURLOPT_HEADER, false);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_URL, $url);
@@ -249,6 +250,7 @@ function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
         . '&submitbutton=%D7%97%D7%99%D7%A4%D7%95%D7%A9';
 
     curl_reset($ch);
+    curl_setopt_array($ch, default_curl_options());
     curl_setopt($ch, CURLOPT_HEADER, false);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_URL, $url);
@@ -291,7 +293,7 @@ function get_courses_next_pages($chs, $session_cookie, $page_start, $page_amount
         $urls[] = 'https://students.technion.ac.il/local/technionsearch/search?page=' . ($page_start + $i);
     }
 
-    $results = multi_request($urls, [
+    $results = multi_request($urls, default_curl_options() + [
         CURLOPT_FAILONERROR => true,
         CURLOPT_COOKIE => 'MoodleSessionstudentsprod=' . $session_cookie,
     ], $chs);
@@ -387,7 +389,10 @@ function download_courses($courses, $cache_dir, $course_cache_life, $simultaneou
 
     $chs = [];
     foreach (array_chunk($requests, $simultaneous_downloads) as $i => $chunk) {
-        multi_request($chunk, [CURLOPT_FAILONERROR => true, CURLOPT_TIMEOUT => $download_timeout], $chs);
+        multi_request($chunk, default_curl_options() + [
+            CURLOPT_FAILONERROR => true,
+            CURLOPT_TIMEOUT => $download_timeout,
+        ], $chs);
         log_verbose("Downloaded " . ($i * $simultaneous_downloads + count($chunk)) . "...\n");
     }
     unset($chs); // causes file data to be flushed
@@ -975,4 +980,15 @@ function multi_request($data, $options = [], &$curly = []) {
     curl_multi_close($mh);
 
     return $result;
+}
+
+function default_curl_options() {
+    $options = [];
+
+    $proxy = getenv('COURSE_INFO_FETCHER_PROXY', true);
+    if ($proxy) {
+        $options[CURLOPT_PROXY] = $proxy;
+    }
+
+    return $options;
 }
