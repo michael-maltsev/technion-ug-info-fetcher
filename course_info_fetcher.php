@@ -13,6 +13,7 @@ function fetch($options = []) {
     $course_info_fetcher_verbose = isset($options['verbose']);
 
     if (!$semester) {
+        log_verbose("Error: Semester not specified\n");
         return false;
     }
 
@@ -24,6 +25,7 @@ function fetch($options = []) {
 
     $courses = get_courses_from_rishum($semester, $simultaneous_downloads);
     if ($courses === false) {
+        log_verbose("Error: Couldn't get list of courses\n");
         return false;
     }
 
@@ -85,6 +87,7 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
 
     $session_params = get_courses_session_params($ch);
     if ($session_params === false) {
+        log_verbose("Error: Couldn't get session params\n");
         return false;
     }
 
@@ -105,6 +108,7 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
     $num_pages = $result['num_pages'];
 
     if (count($courses) == 0) {
+        log_verbose("Error: No courses on first page\n");
         return false;
     }
 
@@ -167,11 +171,13 @@ function get_courses_session_params($ch) {
 
     $html = curl_exec($ch);
     if ($html === false) {
+        log_verbose("Error: " . curl_errno($ch) . " " . curl_error($ch) . "\n");
         return false;
     }
 
     if (!$session_cookie) {
         if (!isset($cookies['MoodleSessionstudentsprod'])) {
+            log_verbose("Error: No session cookie received\n");
             return false;
         }
 
@@ -180,6 +186,7 @@ function get_courses_session_params($ch) {
 
     $p = '#\nM\.cfg = {"wwwroot":"https:\\\\/\\\\/students\.technion\.ac\.il","sesskey":"([0-9a-zA-Z]+)"#u';
     if (!preg_match($p, $html, $matches)) {
+        log_verbose("Error: sesskey value not found\n");
         return false;
     }
 
@@ -260,15 +267,18 @@ function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
 
     $html = curl_exec($ch);
     if ($html === false) {
+        log_verbose("Error: " . curl_errno($ch) . " " . curl_error($ch) . "\n");
         return false;
     }
 
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     if ($code != 200) {
+        log_verbose("Error: Unexpected server code $code\n");
         return false;
     }
 
     if (!is_valid_rishum_html($html)) {
+        log_verbose("Error: Invalid html\n");
         return false;
     }
 
