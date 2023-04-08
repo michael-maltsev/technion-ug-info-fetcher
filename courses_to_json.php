@@ -21,7 +21,6 @@ $longopts  = [
     "semester:",
     "course_cache_life:",
     "simultaneous_downloads:",
-    "download_timeout:",
     "verbose",
 ];
 $options = getopt('', $longopts);

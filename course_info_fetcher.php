@@ -9,7 +9,6 @@ function fetch($options = []) {
     $semester = $options['semester'] ?? null;
     $course_cache_life = intval($options['course_cache_life'] ?? 60*60*24*365*10);
     $simultaneous_downloads = intval($options['simultaneous_downloads'] ?? 64);
-    $download_timeout = intval($options['download_timeout'] ?? 60*10);
     $course_info_fetcher_verbose = isset($options['verbose']);
 
     if (!$semester) {
@@ -32,13 +31,13 @@ function fetch($options = []) {
     log_verbose("Downloading course data...\n");
 
     list($downloaded, $failed) = download_courses(
-        $courses, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
+        $courses, $cache_dir, $course_cache_life, $simultaneous_downloads);
 
     while ($failed > 0) {
         log_verbose("Re-trying download for $failed failed courses...\n");
         sleep(10);
         list($downloaded_new, $failed) = download_courses(
-            $courses, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout);
+            $courses, $cache_dir, $course_cache_life, $simultaneous_downloads);
 
         $downloaded += $downloaded_new;
     }
@@ -150,10 +149,9 @@ function get_courses_session_params($ch) {
     $url = 'https://students.technion.ac.il/local/technionsearch/search';
 
     curl_reset($ch);
-    curl_setopt_array($ch, default_curl_options());
+    curl_setopt_array($ch, initial_curl_options($url));
     curl_setopt($ch, CURLOPT_HEADER, false);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_URL, $url);
 
     $session_cookie = getenv('MOODLE_SESSIONSTUDENTSPROD', true);
     if ($session_cookie) {
@@ -257,10 +255,9 @@ function get_courses_first_page($ch, $session_cookie, $sesskey, $semester) {
         . '&submitbutton=%D7%97%D7%99%D7%A4%D7%95%D7%A9';
 
     curl_reset($ch);
-    curl_setopt_array($ch, default_curl_options());
+    curl_setopt_array($ch, initial_curl_options($url));
     curl_setopt($ch, CURLOPT_HEADER, false);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $post_fields);
     curl_setopt($ch, CURLOPT_COOKIE, 'MoodleSessionstudentsprod=' . $session_cookie);
@@ -303,7 +300,7 @@ function get_courses_next_pages($chs, $session_cookie, $page_start, $page_amount
         $urls[] = 'https://students.technion.ac.il/local/technionsearch/search?page=' . ($page_start + $i);
     }
 
-    $results = multi_request($urls, default_curl_options() + [
+    $results = multi_request($urls, [
         CURLOPT_FAILONERROR => true,
         CURLOPT_COOKIE => 'MoodleSessionstudentsprod=' . $session_cookie,
     ], $chs);
@@ -373,7 +370,7 @@ function get_num_pages_from_xpath(\DOMXPath $xpath) {
     return count($items) > 0 ? max($items) : 1;
 }
 
-function download_courses($courses, $cache_dir, $course_cache_life, $simultaneous_downloads, $download_timeout) {
+function download_courses($courses, $cache_dir, $course_cache_life, $simultaneous_downloads) {
     if (!is_dir($cache_dir)) {
         mkdir($cache_dir);
     }
@@ -399,9 +396,8 @@ function download_courses($courses, $cache_dir, $course_cache_life, $simultaneou
 
     $chs = [];
     foreach (array_chunk($requests, $simultaneous_downloads) as $i => $chunk) {
-        multi_request($chunk, default_curl_options() + [
+        multi_request($chunk, [
             CURLOPT_FAILONERROR => true,
-            CURLOPT_TIMEOUT => $download_timeout,
         ], $chs);
         log_verbose("Downloaded " . ($i * $simultaneous_downloads + count($chunk)) . "...\n");
     }
@@ -935,7 +931,8 @@ function multi_request($data, $options = [], &$curly = []) {
         }
 
         $url = (is_array($d) && !empty($d['url'])) ? $d['url'] : $d;
-        curl_setopt($curly[$id], CURLOPT_URL, $url);
+
+        curl_setopt_array($curly[$id], initial_curl_options($url));
         curl_setopt($curly[$id], CURLOPT_HEADER, false);
         curl_setopt($curly[$id], CURLOPT_RETURNTRANSFER, true);
 
@@ -992,12 +989,26 @@ function multi_request($data, $options = [], &$curly = []) {
     return $result;
 }
 
-function default_curl_options() {
-    $options = [];
+function initial_curl_options($url) {
+    $options = [
+        CURLOPT_TIMEOUT => 60,
+    ];
 
-    $proxy = getenv('COURSE_INFO_FETCHER_PROXY', true);
-    if ($proxy) {
-        $options[CURLOPT_PROXY] = $proxy;
+    $proxy_url = getenv('COURSE_INFO_FETCHER_PROXY_URL', true);
+    $proxy_auth = getenv('COURSE_INFO_FETCHER_PROXY_AUTH', true);
+    if ($proxy_url && $proxy_auth) {
+        $options[CURLOPT_URL] = $proxy_url;
+        $options[CURLOPT_HTTPHEADER] = [
+            'Proxy-Auth: ' . $proxy_auth,
+            'Proxy-Target-URL: ' . $url,
+        ];
+    } else {
+        $options[CURLOPT_URL] = $url;
+
+        $proxy = getenv('COURSE_INFO_FETCHER_PROXY', true);
+        if ($proxy) {
+            $options[CURLOPT_PROXY] = $proxy;
+        }
     }
 
     return $options;
