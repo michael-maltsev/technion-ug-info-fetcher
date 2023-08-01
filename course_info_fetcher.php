@@ -182,7 +182,7 @@ function get_courses_session_params($ch) {
         $session_cookie = $cookies['MoodleSessionstudentsprod'];
     }
 
-    $p = '#\nM\.cfg = {"wwwroot":"https:\\\\/\\\\/students\.technion\.ac\.il","sesskey":"([0-9a-zA-Z]+)"#u';
+    $p = '#\nM\.cfg = {"wwwroot":"https:\\\\/\\\\/students\.technion\.ac\.il","homeurl":{},"sesskey":"([0-9a-zA-Z]+)"#u';
     if (!preg_match($p, $html, $matches)) {
         log_verbose("Error: sesskey value not found\n");
         return false;
@@ -412,7 +412,12 @@ function download_courses($courses, $cache_dir, $course_cache_life, $simultaneou
 
 function is_valid_rishum_html($html) {
     // Verifies that the html response is not truncated. Helps detect partial server responses.
-    if (substr(rtrim($html), -strlen('</html>')) !== '</html>') {
+    // if (substr(rtrim($html), -strlen('</html>')) !== '</html>') {
+    //     return false;
+    // }
+
+    // The check above no longer works since content is added after </html>.
+    if (strpos($html, '</html>') === false) {
         return false;
     }
 
@@ -471,13 +476,13 @@ function get_course_info($course, \DOMDocument $dom, \DOMXPath $xpath, $semester
 function get_course_general_info($course, \DOMDocument $dom, \DOMXPath $xpath) {
     $info = [];
 
-    $class_rule = xpath_class_rule('page-header-headings');
-    $page_header = $xpath->query("//div[$class_rule]/h1");
-    $page_header = iterator_to_array($page_header);
-    ensure(count($page_header) == 1);
-    $page_header = $page_header[0];
-    $page_header = trim($page_header->textContent);
-    $matched = preg_match('#^(.*?)\s*-\s*(.*)$#u', $page_header, $matches);
+    $class_rule = xpath_class_rule('breadcrumb-item');
+    $breadcrumb_item_current = $xpath->query("//li[$class_rule]/a[@aria-current='page']");
+    $breadcrumb_item_current = iterator_to_array($breadcrumb_item_current);
+    ensure(count($breadcrumb_item_current) == 1);
+    $breadcrumb_item_current = $breadcrumb_item_current[0];
+    $breadcrumb_item_current = trim($breadcrumb_item_current->textContent);
+    $matched = preg_match('#^(.*?)\s*-\s*(.*)$#u', $breadcrumb_item_current, $matches);
     ensure($matched);
     ensure($course == str_pad($matches[1], 6, '0', STR_PAD_LEFT));
     $info['מספר מקצוע'] = $course;
