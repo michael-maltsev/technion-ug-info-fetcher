@@ -825,35 +825,6 @@ function get_course_schedule($course, \DOMDocument $dom, \DOMXPath $xpath, $seme
         }
     }
 
-    // A temporary workaround for 104041 - group 21 doesn't have building and
-    // room details for lectures. Copy them from group 22.
-    if ($course == '104041' && $semester == '202301') {
-        $group_22_info_by_time = [];
-        foreach ($schedule as &$item) {
-            if ($item['קבוצה'] == '22' && $item['סוג'] == 'הרצאה') {
-                ensure(!isset($group_22_info_by_time[$item['יום'] . $item['שעה']]));
-                $group_22_info_by_time[$item['יום'] . $item['שעה']] = $item;
-            }
-        }
-        unset($item);
-
-        if (count($group_22_info_by_time) > 0) {
-            foreach ($schedule as &$item) {
-                if ($item['קבוצה'] == '21' && $item['סוג'] == 'הרצאה') {
-                    $group_22_item = $group_22_info_by_time[$item['יום'] . $item['שעה']];
-                    if ($item['בניין'] == '' && $item['חדר'] == '') {
-                        $item['בניין'] = $group_22_item['בניין'];
-                        $item['חדר'] = $group_22_item['חדר'];
-                    } else {
-                        ensure($item['בניין'] == $group_22_item['בניין']);
-                        ensure($item['חדר'] == $group_22_item['חדר']);
-                    }
-                }
-            }
-            unset($item);
-        }
-    }
-
     $lectures = [];
     foreach ($schedule as &$item) {
         $group = $item['קבוצה'];
