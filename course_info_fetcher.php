@@ -161,7 +161,7 @@ function get_courses_session_params($ch) {
     // https://stackoverflow.com/a/25098798
     $cookies = [];
     curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($ch, $header_line) use (&$cookies) {
-        if (preg_match('/^Set-Cookie:\s*([^=]+)=([^;]+)/i', $header_line, $matches)) {
+        if (preg_match('/^Set-Cookie:\s*([^=]+)=([^;\r\n]+)/i', $header_line, $matches)) {
             $cookies[$matches[1]] = $matches[2];
         }
         return strlen($header_line); // needed by curl
