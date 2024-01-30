@@ -8,11 +8,15 @@ Inspired by [ug-data](https://github.com/elazarg/ug-data), but also fetches the 
 
 For Windows, you can use [PHP for Windows](https://windows.php.net/download/) in command-line mode.
 
-For Linux, you can refer to [this comment](https://github.com/michael-maltsev/technion-ug-info-fetcher/issues/1#issuecomment-1271321255) for installing PHP and the relevant dependencies.
+For Linux, you can refer to [this comment](https://github.com/michael-maltsev/technion-ug-info-fetcher/issues/1#issuecomment-1271321255) for installing PHP and the relevant dependencies
+Alternatively, use vscode's Dev Containers extention with the devcontainer defined for this repo.
+
 
 Recommended usage:
 
 `php courses_to_json.php --semester <semester> --verbose`
+When using vscode's devcontainer, one can specify the semester in semester.env and run:
+`bash ./run.sh`
 
 Replace `<semester>` with the desired semester in the following format: `YYYYSS`, for example `201901` for a Winter 2019-2020 semester.
 
