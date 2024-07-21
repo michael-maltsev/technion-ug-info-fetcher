@@ -182,13 +182,11 @@ function get_courses_session_params($ch) {
         $session_cookie = $cookies['MoodleSessionstudentsprod'];
     }
 
-    $p = '#\nM\.cfg = {"wwwroot":"https:\\\\/\\\\/students\.technion\.ac\.il","homeurl":{},"sesskey":"([0-9a-zA-Z]+)"#u';
-    if (!preg_match($p, $html, $matches)) {
+    $sesskey = get_sesskey_from_html($html);
+    if ($sesskey === false) {
         log_verbose("Error: sesskey value not found\n");
         return false;
     }
-
-    $sesskey = $matches[1];
 
     return [
         'session_cookie' => $session_cookie,
@@ -410,6 +408,15 @@ function download_courses($courses, $cache_dir, $course_cache_life, $simultaneou
     return [$requested_count - $failed_count, $failed_count];
 }
 
+function get_sesskey_from_html($html) {
+    $p = '#\nM\.cfg = \{"wwwroot":"https:\\\\/\\\\/students\.technion\.ac\.il","homeurl":\{\},"sesskey":"([0-9a-zA-Z]+)"#';
+    if (!preg_match($p, $html, $matches)) {
+        return false;
+    }
+
+    return $matches[1];
+}
+
 function is_valid_rishum_html($html) {
     // Verifies that the html response is not truncated. Helps detect partial server responses.
     // if (substr(rtrim($html), -strlen('</html>')) !== '</html>') {
@@ -418,6 +425,10 @@ function is_valid_rishum_html($html) {
 
     // The check above no longer works since content is added after </html>.
     if (strpos($html, '</html>') === false) {
+        return false;
+    }
+
+    if (get_sesskey_from_html($html) === false) {
         return false;
     }
 
