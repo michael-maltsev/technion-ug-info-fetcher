@@ -33,9 +33,11 @@ function fetch($options = []) {
     list($downloaded, $failed) = download_courses(
         $courses, $cache_dir, $course_cache_life, $simultaneous_downloads);
 
+    $sleep_seconds = 10;
     while ($failed > 0) {
         log_verbose("Re-trying download for $failed failed courses...\n");
-        sleep(10);
+        sleep($sleep_seconds);
+        $sleep_seconds = min($sleep_seconds * 2, 300);
         list($downloaded_new, $failed) = download_courses(
             $courses, $cache_dir, $course_cache_life, $simultaneous_downloads);
 
@@ -97,9 +99,11 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
     log_verbose("Page 1...\n");
 
     $result = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
+    $sleep_seconds = 10;
     while ($result === false) {
         log_verbose("Re-trying...\n");
-        sleep(10);
+        sleep($sleep_seconds);
+        $sleep_seconds = min($sleep_seconds * 2, 300);
         $result = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
     }
 
@@ -118,10 +122,12 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
         log_verbose("Page " . ($page + 1) . "...\n");
 
         $result = get_courses_next_pages($chs, $session_cookie, $page, $simultaneous_downloads);
+        $sleep_seconds = 10;
         while ($result === false) {
             log_verbose("Re-trying...\n");
             $chs = [];
-            sleep(10);
+            sleep($sleep_seconds);
+            $sleep_seconds = min($sleep_seconds * 2, 300);
             $result = get_courses_next_pages($chs, $session_cookie, $page, $simultaneous_downloads);
         }
 
