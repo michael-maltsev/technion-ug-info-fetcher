@@ -718,7 +718,13 @@ function get_course_semester_info($course, \DOMDocument $dom, \DOMXPath $xpath, 
                 }
 
                 if ($exam_type == 'בחנים') {
-                    ensure(preg_match('#^מועד [א-ת]$#u', $info_key));
+                    ensure(in_array($info_key, [
+                        'מועד א',
+                        'מועד ב',
+                        'מועד ג',
+                        'מועד ד',
+                        'מועד ה',
+                    ]));
                     $info_key = 'בוחן ' . $info_key;
                 } else {
                     ensure(in_array($info_key, [
