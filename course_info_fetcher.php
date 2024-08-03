@@ -724,6 +724,7 @@ function get_course_semester_info($course, \DOMDocument $dom, \DOMXPath $xpath, 
                         'מועד ג',
                         'מועד ד',
                         'מועד ה',
+                        'מועד ו',
                     ]));
                     $info_key = 'בוחן ' . $info_key;
                 } else {
