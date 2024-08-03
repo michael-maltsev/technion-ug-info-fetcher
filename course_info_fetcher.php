@@ -35,7 +35,7 @@ function fetch($options = []) {
 
     $sleep_seconds = 10;
     while ($failed > 0) {
-        log_verbose("Re-trying download for $failed failed courses...\n");
+        log_verbose("Retrying download for $failed failed courses...\n");
         sleep($sleep_seconds);
         $sleep_seconds = min($sleep_seconds * 2, 300);
         list($downloaded_new, $failed) = download_courses(
@@ -86,10 +86,16 @@ function fetch($options = []) {
 function get_courses_from_rishum($semester, $simultaneous_downloads) {
     $ch = curl_init();
 
-    $session_params = get_courses_session_params($ch);
-    if ($session_params === false) {
-        log_verbose("Error: Couldn't get session params\n");
-        return false;
+    $sleep_seconds = 10;
+    while (true) {
+        $session_params = get_courses_session_params($ch);
+        if ($session_params !== false) {
+            break;
+        }
+
+        log_verbose("Error: Couldn't get session params, retrying...\n");
+        sleep($sleep_seconds);
+        $sleep_seconds = min($sleep_seconds * 2, 300);
     }
 
     $session_cookie = $session_params['session_cookie'];
@@ -98,13 +104,16 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
     log_verbose("Getting list of courses from Rishum:\n");
     log_verbose("Page 1...\n");
 
-    $result = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
     $sleep_seconds = 10;
-    while ($result === false) {
-        log_verbose("Re-trying...\n");
+    while (true) {
+        $result = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
+        if ($result !== false) {
+            break;
+        }
+
+        log_verbose("Error: Couldn't get first page, retrying...\n");
         sleep($sleep_seconds);
         $sleep_seconds = min($sleep_seconds * 2, 300);
-        $result = get_courses_first_page($ch, $session_cookie, $sesskey, $semester);
     }
 
     $courses = $result['courses'];
@@ -121,14 +130,16 @@ function get_courses_from_rishum($semester, $simultaneous_downloads) {
     while (!$reached_end) {
         log_verbose("Page " . ($page + 1) . "...\n");
 
-        $result = get_courses_next_pages($chs, $session_cookie, $page, $simultaneous_downloads);
         $sleep_seconds = 10;
-        while ($result === false) {
-            log_verbose("Re-trying...\n");
-            $chs = [];
+        while (true) {
+            $result = get_courses_next_pages($chs, $session_cookie, $page, $simultaneous_downloads);
+            if ($result !== false) {
+                break;
+            }
+
+            log_verbose("Error: Couldn't get next page, retrying...\n");
             sleep($sleep_seconds);
             $sleep_seconds = min($sleep_seconds * 2, 300);
-            $result = get_courses_next_pages($chs, $session_cookie, $page, $simultaneous_downloads);
         }
 
         list($pages_processed, $reached_end, $iter_courses) = $result;
