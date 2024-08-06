@@ -36,7 +36,6 @@ function fetch_semester {
 	local courses_file=courses_$semester
 
 	php courses_to_json.php --semester "$semester" --verbose --simultaneous_downloads 16 || {
-		cd ..
 		echo courses_to_json failed
 		return 1
 	}
@@ -52,6 +51,26 @@ function fetch_semester {
 
 	local php_cmd="echo json_encode(json_decode(file_get_contents('$src_file')), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);"
 	php -r "$php_cmd" > $dest_file
+
+	# Temporarily copy some of the more up-to-date data from the new SAP system.
+	if [[ "$semester" == "202302" ]]; then
+		local src_file_enriched=$courses_file.enriched.json
+		local dest_file_min_js_enriched=$out_dir/$courses_file.enriched.min.js
+		local dest_file_enriched=$out_dir/$courses_file.enriched.json
+
+		php enrich_from_sap_data.php --semester "$semester" --input "$src_file" --output "$src_file_enriched" || {
+			echo enrich_from_sap_data failed
+			return 1
+		}
+
+		echo -n "var courses_from_rishum = JSON.parse('" > $dest_file_min_js_enriched
+		local php_cmd="echo addcslashes(file_get_contents('$src_file_enriched'), '\\\\\\'');"
+		php -r "$php_cmd" >> $dest_file_min_js_enriched
+		echo -n "')" >> $dest_file_min_js_enriched
+
+		local php_cmd="echo json_encode(json_decode(file_get_contents('$src_file_enriched')), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);"
+		php -r "$php_cmd" > $dest_file_enriched
+	fi
 
 	return 0
 }
