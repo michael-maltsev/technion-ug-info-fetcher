@@ -4,6 +4,9 @@ A script to fetch and parse Technion UG courses information, to have it in an ac
 
 Inspired by [ug-data](https://github.com/elazarg/ug-data), but also fetches the course schedule information.
 
+> [!NOTE]  
+> Starting with the Winter 2024-2025 semester, the Technion moved to a new scheduling system based on SAP. A new script was created to fetch and parse this data: [technion-sap-info-fetcher](https://github.com/michael-maltsev/technion-sap-info-fetcher).
+
 ## Usage
 
 For Windows, you can use [PHP for Windows](https://windows.php.net/download/) in command-line mode.
