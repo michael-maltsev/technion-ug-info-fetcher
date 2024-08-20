@@ -7,6 +7,11 @@ Inspired by [ug-data](https://github.com/elazarg/ug-data), but also fetches the 
 > [!NOTE]  
 > Starting with the Winter 2024-2025 semester, the Technion moved to a new scheduling system based on SAP. A new script was created to fetch and parse this data: [technion-sap-info-fetcher](https://github.com/michael-maltsev/technion-sap-info-fetcher).
 
+## The data
+
+The script runs on a regular basis, and the data can be found in the [gh-pages
+branch](https://github.com/michael-maltsev/technion-ug-info-fetcher/tree/gh-pages).
+
 ## Usage
 
 For Windows, you can use [PHP for Windows](https://windows.php.net/download/) in command-line mode.
