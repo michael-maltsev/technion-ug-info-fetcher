@@ -54,22 +54,30 @@ function fetch_semester {
 
 	# Temporarily copy some of the more up-to-date data from the new SAP system.
 	if [[ "$semester" == "202302" ]]; then
-		local src_file_enriched=$courses_file.enriched.json
-		local dest_file_min_js_enriched=$out_dir/$courses_file.enriched.min.js
-		local dest_file_enriched=$out_dir/$courses_file.enriched.json
+		local dest_file_min_js_without_sap_enrichment=$out_dir/$courses_file.without_sap_enrichment.min.js
+		local dest_file_without_sap_enrichment=$out_dir/$courses_file.without_sap_enrichment.json
+		cp "$dest_file_min_js" "$dest_file_min_js_without_sap_enrichment"
+		cp "$dest_file" "$dest_file_without_sap_enrichment"
 
-		php enrich_from_sap_data.php --semester "$semester" --input "$src_file" --output "$src_file_enriched" || {
+		php enrich_from_sap_data.php --semester "$semester" --input "$src_file" --output "$src_file" || {
 			echo enrich_from_sap_data failed
 			return 1
 		}
 
-		echo -n "var courses_from_rishum = JSON.parse('" > $dest_file_min_js_enriched
-		local php_cmd="echo addcslashes(file_get_contents('$src_file_enriched'), '\\\\\\'');"
-		php -r "$php_cmd" >> $dest_file_min_js_enriched
-		echo -n "')" >> $dest_file_min_js_enriched
+		echo -n "var courses_from_rishum = JSON.parse('" > $dest_file_min_js
+		local php_cmd="echo addcslashes(file_get_contents('$src_file'), '\\\\\\'');"
+		php -r "$php_cmd" >> $dest_file_min_js
+		echo -n "')" >> $dest_file_min_js
 
-		local php_cmd="echo json_encode(json_decode(file_get_contents('$src_file_enriched')), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);"
-		php -r "$php_cmd" > $dest_file_enriched
+		local php_cmd="echo json_encode(json_decode(file_get_contents('$src_file')), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);"
+		php -r "$php_cmd" > $dest_file
+
+		# Temporary.
+		local src_file_enriched=$courses_file.enriched.json
+		local dest_file_min_js_enriched=$out_dir/$courses_file.enriched.min.js
+		local dest_file_enriched=$out_dir/$courses_file.enriched.json
+		cp "$dest_file_min_js" "$dest_file_min_js_enriched"
+		cp "$dest_file" "$dest_file_enriched"
 	fi
 
 	return 0
