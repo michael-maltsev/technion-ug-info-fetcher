@@ -461,7 +461,7 @@ function is_valid_rishum_course_html($html) {
         return false;
     }
 
-    $p = '#<meta\s+property="page_url"\s+name="page_url"\s+content="https://students\.technion\.ac\.il/local/technionsearch/course/\d+/\d+"\s+/>#';
+    $p = '#<title>\d{5,6} - [^<]*? | my\.technion</title>#';
     if (!preg_match($p, $html)) {
         return false;
     }
