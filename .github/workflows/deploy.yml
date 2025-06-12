@@ -2,11 +2,11 @@ name: Generate courses
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-  schedule:
-    - cron: '0 9 * * *'
+  # push:
+  #   branches:
+  #     - main
+  # schedule:
+  #   - cron: '0 9 * * *'
 
 concurrency: generate-courses
 
